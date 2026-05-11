@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
         kpis: data.kpis,
         funnel: data.funnel,
         ads_performance: data.adsPerformance,
+        charts: data.charts,
         leads: data.leads,
         meta: {
           fetched_at: data.fetchedAt,
