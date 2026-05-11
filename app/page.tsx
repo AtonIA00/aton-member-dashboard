@@ -32,7 +32,13 @@ export default async function Page({
 
   const hmac = validateUchatSignature(params, { maxAgeSeconds: 300 });
   if (!hmac.ok) {
-    console.warn("[page] hmac failed", { reason: hmac.reason });
+    // TEMP DEBUG: log de TODOS os searchParams pra inspecionar o que a
+    // Uchat envia (workspace_name/user_email/user_name etc). Remover
+    // assim que diagnosticarmos a divergência de HMAC.
+    console.warn("[page] hmac failed", {
+      reason: hmac.reason,
+      all_search_params: sp,
+    });
     return <InvalidAccess />;
   }
 
