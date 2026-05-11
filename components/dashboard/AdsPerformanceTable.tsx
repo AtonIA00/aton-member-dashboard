@@ -102,27 +102,29 @@ export function AdsPerformanceTable({ rows }: Props) {
       <div className="max-h-[460px] overflow-auto">
         <table className="w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-[color:var(--card)]">
-            <Th col="rank" sortCol={sortCol} sortDir={sortDir} onClick={toggle}>
-              #
-            </Th>
-            <Th col="id" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="left">
-              ID Anúncio
-            </Th>
-            <Th col="agendados" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
-              Agendados
-            </Th>
-            <Th col="pctAgend" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
-              % Agendamento
-            </Th>
-            <Th col="pctMql" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
-              % MQL
-            </Th>
-            <Th col="pctInteracao" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
-              % Interação
-            </Th>
-            <Th col="total" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
-              Total
-            </Th>
+            <tr>
+              <Th col="rank" sortCol={sortCol} sortDir={sortDir} onClick={toggle}>
+                #
+              </Th>
+              <Th col="id" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="left">
+                ID Anúncio
+              </Th>
+              <Th col="agendados" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
+                Agendados
+              </Th>
+              <Th col="pctAgend" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
+                % Agendamento
+              </Th>
+              <Th col="pctMql" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
+                % MQL
+              </Th>
+              <Th col="pctInteracao" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
+                % Interação
+              </Th>
+              <Th col="total" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
+                Total
+              </Th>
+            </tr>
           </thead>
           <tbody>
             {sorted.map((r, i) => (
