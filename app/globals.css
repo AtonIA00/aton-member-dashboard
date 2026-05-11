@@ -1,0 +1,146 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #0A1628;
+  --foreground: #E8EDF2;
+  --card: #0F1D32;
+  --card-foreground: #E8EDF2;
+  --popover: #0F1D32;
+  --popover-foreground: #E8EDF2;
+  --primary: #00E5FF;
+  --primary-foreground: #0A1628;
+  --secondary: #1A2942;
+  --secondary-foreground: #E8EDF2;
+  --muted: #0F1D32;
+  --muted-foreground: #8899AA;
+  --accent: #1A2942;
+  --accent-foreground: #E8EDF2;
+  --destructive: #FF5252;
+  --border: rgb(232 237 242 / 10%);
+  --input: rgb(232 237 242 / 15%);
+  --ring: #00E5FF;
+  --chart-1: #00E5FF;
+  --chart-2: #69F0AE;
+  --chart-3: #FFD740;
+  --chart-4: #FF5252;
+  --chart-5: #8899AA;
+  --sidebar: #0F1D32;
+  --sidebar-foreground: #E8EDF2;
+  --sidebar-primary: #00E5FF;
+  --sidebar-primary-foreground: #0A1628;
+  --sidebar-accent: #1A2942;
+  --sidebar-accent-foreground: #E8EDF2;
+  --sidebar-border: rgb(232 237 242 / 10%);
+  --sidebar-ring: #00E5FF;
+  --radius: 0.625rem;
+}
+
+.dark {
+  --background: #0A1628;
+  --foreground: #E8EDF2;
+  --card: #0F1D32;
+  --card-foreground: #E8EDF2;
+  --popover: #0F1D32;
+  --popover-foreground: #E8EDF2;
+  --primary: #00E5FF;
+  --primary-foreground: #0A1628;
+  --secondary: #1A2942;
+  --secondary-foreground: #E8EDF2;
+  --muted: #0F1D32;
+  --muted-foreground: #8899AA;
+  --accent: #1A2942;
+  --accent-foreground: #E8EDF2;
+  --destructive: #FF5252;
+  --border: rgb(232 237 242 / 10%);
+  --input: rgb(232 237 242 / 15%);
+  --ring: #00E5FF;
+  --chart-1: #00E5FF;
+  --chart-2: #69F0AE;
+  --chart-3: #FFD740;
+  --chart-4: #FF5252;
+  --chart-5: #8899AA;
+  --sidebar: #0F1D32;
+  --sidebar-foreground: #E8EDF2;
+  --sidebar-primary: #00E5FF;
+  --sidebar-primary-foreground: #0A1628;
+  --sidebar-accent: #1A2942;
+  --sidebar-accent-foreground: #E8EDF2;
+  --sidebar-border: rgb(232 237 242 / 10%);
+  --sidebar-ring: #00E5FF;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-montserrat);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-montserrat), var(--font-geist-sans), system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  select {
+    background-color: var(--card);
+    color: var(--foreground);
+  }
+  option {
+    background-color: #0F1D32;
+    color: #E8EDF2;
+  }
+  option:hover,
+  option:checked {
+    background-color: #1A2942;
+    color: #00E5FF;
+  }
+}

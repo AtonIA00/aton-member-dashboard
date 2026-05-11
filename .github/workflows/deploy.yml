@@ -1,0 +1,99 @@
+name: Deploy Aton Member Dashboard
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    # Self-hosted runner instalado em /opt/github-runner-member-dashboard no
+    # servidor 72.61.217.72. Roda como systemd, label "member-dashboard".
+    runs-on: [self-hosted, linux, member-dashboard]
+
+    steps:
+      - name: Pull latest main
+        run: |
+          set -euo pipefail
+          cd /root/aton-member-dashboard
+          git fetch --all
+          git reset --hard origin/main
+          echo "HEAD: $(git log --oneline -1)"
+
+      - name: Build image
+        run: |
+          set -euo pipefail
+          cd /root/aton-member-dashboard
+          # NEXT_PUBLIC_* precisa entrar no build args pra Next.js inlinar
+          # no bundle JS do client (FRAMEWORK.md §4).
+          set -a; . /root/aton-member-dashboard/.env.local; set +a
+          docker build -t aton-member-dashboard:latest \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL:-}" \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}" \
+            --build-arg NEXT_PUBLIC_SITE_URL="${NEXT_PUBLIC_SITE_URL:-}" \
+            .
+
+      - name: Update Swarm service
+        run: |
+          set -euo pipefail
+          if docker service inspect member-dashboard_app >/dev/null 2>&1; then
+            # Reaplicar TODAS as vars do .env.local em cada deploy. O --env-file
+            # do `service create` é resolvido na criação — mudanças no arquivo
+            # depois NÃO refletem no container. --env-add idempotentemente
+            # adiciona/atualiza cada var no spec do service.
+            ENV_ARGS=""
+            while IFS='=' read -r key value; do
+              [[ -z "$key" || "$key" =~ ^# ]] && continue
+              ENV_ARGS+=" --env-add $key=$value"
+            done < <(grep -E '^[A-Z_][A-Z0-9_]*=' /root/aton-member-dashboard/.env.local || true)
+
+            docker service update \
+              --image aton-member-dashboard:latest \
+              --force \
+              $ENV_ARGS \
+              --label-add "traefik.touch=$(date +%s)" \
+              member-dashboard_app
+            # Workaround do problema conhecido: AtonbotNet overlay quebra
+            # após update (FRAMEWORK.md §3). label-touch acima também força
+            # Traefik (Swarm provider) a re-detectar o service.
+            docker service update --network-rm AtonbotNet member-dashboard_app
+            docker service update --network-add AtonbotNet member-dashboard_app
+            docker service update --label-add "traefik.touch=$(date +%s)" member-dashboard_app
+          else
+            docker service create \
+              --name member-dashboard_app \
+              --replicas 1 \
+              --env-file /root/aton-member-dashboard/.env.local \
+              --network AtonbotNet \
+              --restart-condition on-failure \
+              --update-order start-first \
+              --update-failure-action rollback \
+              --update-monitor 30s \
+              --update-delay 5s \
+              --stop-grace-period 30s \
+              --label traefik.enable=true \
+              --label traefik.http.routers.member-dashboard.entrypoints=websecure \
+              --label traefik.http.routers.member-dashboard.priority=1 \
+              --label "traefik.http.routers.member-dashboard.rule=Host(\`member-dashboard.aton-ia.com.br\`)" \
+              --label traefik.http.routers.member-dashboard.service=member-dashboard \
+              --label traefik.http.routers.member-dashboard.tls.certresolver=letsencryptresolver \
+              --label traefik.http.services.member-dashboard.loadbalancer.passHostHeader=1 \
+              --label traefik.http.services.member-dashboard.loadbalancer.server.port=3000 \
+              aton-member-dashboard:latest
+          fi
+
+      - name: Verify
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
+              https://member-dashboard.aton-ia.com.br/api/health || echo "000")
+            echo "[$i] /api/health -> $CODE"
+            if [ "$CODE" = "200" ]; then
+              echo "Deploy OK"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "ERRO: /api/health não respondeu 200 após 10 tentativas"
+          exit 1
