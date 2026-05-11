@@ -1,8 +1,9 @@
 import { checkDashboardAccess } from "@/lib/access";
 import { validateUchatSignature } from "@/lib/hmac";
+import { parsePeriodKey } from "@/lib/period";
 import { InvalidAccess } from "@/components/InvalidAccess";
 import { UpsellScreen } from "@/components/UpsellScreen";
-import { GrantedPlaceholder } from "@/components/GrantedPlaceholder";
+import { Dashboard } from "@/components/dashboard/Dashboard";
 
 // Renderização dinâmica obrigatória — a página depende de searchParams + DB.
 export const dynamic = "force-dynamic";
@@ -31,7 +32,6 @@ export default async function Page({
 
   const hmac = validateUchatSignature(params, { maxAgeSeconds: 300 });
   if (!hmac.ok) {
-    // Log server-side só com a razão (sem PII).
     console.warn("[page] hmac failed", { reason: hmac.reason });
     return <InvalidAccess />;
   }
@@ -44,12 +44,20 @@ export default async function Page({
     return <UpsellScreen workspaceName={workspaceName || undefined} />;
   }
 
+  const periodKey = parsePeriodKey(firstString(sp.period));
+  const customFrom = firstString(sp.from);
+  const customTo = firstString(sp.to);
+
   return (
-    <GrantedPlaceholder
+    <Dashboard
+      workspaceId={hmac.workspaceId}
       workspaceName={workspaceName || `Workspace ${hmac.workspaceId}`}
       userName={userName}
       tier={access.tier}
       daysUntilExpiry={access.daysUntilExpiry}
+      periodKey={periodKey}
+      customFrom={customFrom}
+      customTo={customTo}
     />
   );
 }
