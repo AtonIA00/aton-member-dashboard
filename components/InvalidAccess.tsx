@@ -1,6 +1,6 @@
 export function InvalidAccess() {
   return (
-    <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-12">
+    <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-16">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-50"
@@ -10,15 +10,15 @@ export function InvalidAccess() {
         }}
       />
 
-      <div className="relative w-full max-w-md text-center">
+      <div className="relative w-full max-w-xl text-center">
         <div
-          className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-full border border-[color:var(--border)] bg-[color:var(--card)]/80 backdrop-blur"
+          className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-full border border-[color:var(--border)] bg-[color:var(--card)]/80 backdrop-blur"
           aria-hidden
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
+            width="36"
+            height="36"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -33,16 +33,16 @@ export function InvalidAccess() {
           </svg>
         </div>
 
-        <h1 className="font-[family-name:var(--font-montserrat)] text-2xl font-bold leading-tight text-[color:var(--foreground)] sm:text-3xl">
+        <h1 className="font-[family-name:var(--font-montserrat)] text-3xl font-bold leading-tight tracking-tight text-[color:var(--foreground)] sm:text-4xl">
           Acesso inválido
         </h1>
 
-        <p className="mt-4 text-sm leading-relaxed text-[color:var(--muted-foreground)] sm:text-base">
+        <p className="mx-auto mt-5 max-w-md text-base leading-relaxed text-[color:var(--muted-foreground)] sm:text-lg">
           Volte ao painel da Aton e tente novamente. Se o problema persistir,
           fale com o seu CS.
         </p>
 
-        <div className="mt-10 text-xs text-[color:var(--muted-foreground)]">
+        <div className="mt-12 text-xs text-[color:var(--muted-foreground)]">
           <span className="font-mono">member-dashboard.aton-ia.com.br</span>
         </div>
       </div>
