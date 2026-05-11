@@ -13,6 +13,7 @@ import { DailyVolumeChart } from "./charts/DailyVolumeChart";
 import { CampaignVolumeChart } from "./charts/CampaignVolumeChart";
 import { MqlDonutChart } from "./charts/MqlDonutChart";
 import { StageDistributionChart } from "./charts/StageDistributionChart";
+import { MonthlyEvolutionChart } from "./charts/MonthlyEvolutionChart";
 
 type Props = {
   workspaceId: string;
@@ -42,7 +43,7 @@ export async function Dashboard({
   filters,
 }: Props) {
   const range = resolvePeriod(periodKey, customFrom, customTo);
-  const data = await getDashboardData(workspaceId, range, filters);
+  const data = await getDashboardData(workspaceId, range, filters, periodKey);
 
   const periodSummary = formatPeriodSummary(periodKey, range);
   const filtersActive = hasAnyFilter(data.filters);
@@ -87,9 +88,13 @@ export async function Dashboard({
         {/* FilterBar — só aparece se tem leads no período */}
         <FilterBar dimensions={data.dimensions} totalNoPeriodo={data.totalNoPeriodo} />
 
-        {/* KPIs */}
+        {/* KPIs (M8: deltas + chip outline + linha "X no período anterior") */}
         <div className="mt-6">
-          <KpiRow kpis={data.kpis} />
+          <KpiRow
+            kpis={data.kpis}
+            kpisPrevious={data.kpisPrevious}
+            deltas={data.deltas}
+          />
         </div>
 
         {data.totalNoPeriodo === 0 ? (
@@ -114,7 +119,7 @@ export async function Dashboard({
               <AdsPerformanceTable rows={data.adsPerformance} />
             </div>
 
-            {/* Análise visual — M5 */}
+            {/* Análise visual — M5 + M8 */}
             <section aria-label="Análise visual" className="mt-10">
               <div className="mb-4 flex items-center gap-2">
                 <span aria-hidden className="block h-4 w-1 rounded-sm bg-[color:var(--primary)]" />
@@ -122,8 +127,12 @@ export async function Dashboard({
                   Análise visual
                 </h2>
               </div>
-              {/* Linha 1: 2:1 (line precisa de mais largura) */}
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              {/* M8: Evolução Mensal full-width no topo — trajetória do workspace */}
+              <div>
+                <MonthlyEvolutionChart data={data.charts.monthlyEvolution} />
+              </div>
+              {/* Linha 2: 2:1 (line precisa de mais largura) */}
+              <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
                 <div className="lg:col-span-2">
                   <DailyVolumeChart data={data.charts.dailyVolume} />
                 </div>
@@ -131,7 +140,7 @@ export async function Dashboard({
                   <MqlDonutChart data={data.charts.mqlDonut} />
                 </div>
               </div>
-              {/* Linha 2: 1:1 */}
+              {/* Linha 3: 1:1 */}
               <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <CampaignVolumeChart data={data.charts.campaignVolume} />
                 <StageDistributionChart data={data.charts.stageDistribution} />

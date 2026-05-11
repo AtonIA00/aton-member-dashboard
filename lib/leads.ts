@@ -1,7 +1,11 @@
 import "server-only";
 import { getSupabaseAdmin } from "./supabase/server";
 import { classify } from "./classify";
-import type { DateRange } from "./period";
+import {
+  previousRange,
+  type DateRange,
+  type PeriodKey,
+} from "./period";
 import {
   applyFilters,
   computeDimensions,
@@ -9,7 +13,13 @@ import {
   type Dimensions,
   type Filters,
 } from "./filters";
-import { buildAllCharts, type ChartsData } from "./charts";
+import {
+  buildAllCharts,
+  buildMonthlyEvolution,
+  type ChartsData,
+  type MonthlyEvolutionPoint,
+} from "./charts";
+import { computeDelta, type Delta } from "./deltas";
 
 // Linha crua da terrace360_leads_atonhub — apenas as colunas que o dashboard
 // consome. Demais colunas (probabilidade_avanco, dia_hora_semana, cliente,
@@ -55,18 +65,33 @@ export type AdsPerfRow = {
   isUnknownId: boolean;
 };
 
+export type Deltas = {
+  total: Delta;
+  pctInteracao: Delta;
+  mqlRate: Delta;
+  agendadoPlus: Delta;
+  anunciosAtivos: Delta;
+  campanhasAtivas: Delta;
+};
+
 export type DashboardData = {
   workspaceId: string;
   range: DateRange;
+  /** Período anterior derivado (M8). null = "Todo período" ou sem referência. */
+  previousRange: DateRange | null;
   /** Filtros efetivamente aplicados (depois de drop dos inválidos). */
   filters: Filters;
   /** Dimensões disponíveis no recorte do período (ANTES dos filtros). */
   dimensions: Dimensions;
   kpis: Kpis;
+  /** KPIs do período anterior (M8). null quando previousRange=null. */
+  kpisPrevious: Kpis | null;
+  /** Deltas atual vs anterior por KPI (M8). null quando previousRange=null. */
+  deltas: Deltas | null;
   funnel: FunnelStep[];
   adsPerformance: AdsPerfRow[];
-  /** Dados pros 4 charts (M5) — derivados dos mesmos leads filtrados. */
-  charts: ChartsData;
+  /** Dados pros charts. monthlyEvolution (M8) é independente de filtros. */
+  charts: ChartsData & { monthlyEvolution: MonthlyEvolutionPoint[] };
   leads: LeadRow[];
   fetchedAt: string;
   fetchMs: number;
@@ -149,40 +174,146 @@ async function fetchBaseLeads(
 }
 
 /**
- * Agrega o dashboard do workspace pro recorte (período + filtros opcionais).
+ * Filtra leads in-memory pelo range (inclusive ambos os limites).
+ * Helper interno usado quando o fetch é expandido pra cobrir current+previous.
+ */
+function leadsInRange(leads: LeadRow[], range: DateRange): LeadRow[] {
+  if (!range.from && !range.to) return leads;
+  const fromIso = range.from ? `${range.from}T00:00:00Z` : null;
+  const toIso = range.to ? `${range.to}T23:59:59.999Z` : null;
+  return leads.filter((l) => {
+    if (!l.data) return false;
+    if (fromIso && l.data < fromIso) return false;
+    if (toIso && l.data > toIso) return false;
+    return true;
+  });
+}
+
+/**
+ * Computa o union range cobrindo current ∪ previous pra fazer 1 fetch só.
+ * Se previous é null → retorna current.
+ */
+function unionRange(current: DateRange, previous: DateRange | null): DateRange {
+  if (!previous) return current;
+  // "Todo período" + previous (não acontece pelo design, mas defensivo).
+  if (!current.from || !current.to) return current;
+  const from = previous.from && previous.from < current.from ? previous.from : current.from;
+  const to = previous.to && previous.to > current.to ? previous.to : current.to;
+  return { from, to };
+}
+
+/**
+ * Agrega o dashboard do workspace.
  *
- * Ordem da computação:
- * 1. Fetch base (cacheado por workspace+período).
- * 2. computeDimensions(base) — dropdowns refletem o que existe no período,
- *    NÃO o que sobra depois dos filtros.
- * 3. dropInvalidFilters(filters, dimensions) — silenciosamente remove
- *    filtros cujo valor não existe.
- * 4. applyFilters(base, filters) — leads do recorte filtrado.
- * 5. KPIs / Funil / Ads / Tabela computados sobre o subset filtrado.
+ * Computa em paralelo:
+ * 1. Fetch base expandido cobrindo current ∪ previous (1 round-trip cacheado).
+ *    Filters aplicados em memória pra cada janela.
+ * 2. Fetch separado dos últimos 12 meses (ignora filtros — chart de
+ *    trajetória do workspace inteiro). Cacheado independente.
+ *
+ * Resultado: kpis (current), kpisPrevious, deltas (current vs previous),
+ * charts existentes (sobre current), monthlyEvolution (sobre 12 meses sem
+ * filtro).
  */
 export async function getDashboardData(
   workspaceId: string,
   range: DateRange,
   filtersIn: Filters = {},
+  periodKey?: PeriodKey,
 ): Promise<DashboardData> {
-  const { leads: base, fetchMs } = await fetchBaseLeads(workspaceId, range);
-  const dimensions = computeDimensions(base);
+  const prev = previousRange(range, periodKey);
+  const expanded = unionRange(range, prev);
+
+  // 12 meses corridos pro MonthlyEvolutionChart — independente do range
+  // selecionado e dos filtros. Esse chart mostra a trajetória do workspace
+  // inteiro, é a "vista panorâmica" do produto.
+  const now = new Date();
+  const twelveMoStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1),
+  );
+  const twelveMoRange: DateRange = {
+    from: `${twelveMoStart.getUTCFullYear()}-${String(
+      twelveMoStart.getUTCMonth() + 1,
+    ).padStart(2, "0")}-01`,
+    to: `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(
+      2,
+      "0",
+    )}-${String(now.getUTCDate()).padStart(2, "0")}`,
+  };
+
+  // Os 2 fetches são independentes — paralelizar.
+  const [baseExpanded, twelveMo] = await Promise.all([
+    fetchBaseLeads(workspaceId, expanded),
+    fetchBaseLeads(workspaceId, twelveMoRange),
+  ]);
+
+  const base = baseExpanded.leads;
+  const currentLeadsAll = leadsInRange(base, range);
+  const previousLeadsAll = prev ? leadsInRange(base, prev) : [];
+
+  // Dimensões e filtros derivam SEMPRE do recorte CURRENT (mais útil pra UI).
+  const dimensions = computeDimensions(currentLeadsAll);
   const filters = dropInvalidFilters(filtersIn, dimensions, workspaceId);
-  const filtered = applyFilters(base, filters);
+
+  // Aplica filtros aos DOIS recortes — comparativo é "mesma lente filtrada
+  // em janelas temporais diferentes" (decisão M8).
+  const currentFiltered = applyFilters(currentLeadsAll, filters);
+  const previousFiltered = prev ? applyFilters(previousLeadsAll, filters) : [];
+
+  const kpis = computeKpis(currentFiltered);
+  const kpisPrevious = prev ? computeKpis(previousFiltered) : null;
+  const deltas: Deltas | null = kpisPrevious
+    ? {
+        total: computeDelta(kpis.total, kpisPrevious.total, {
+          kind: "count",
+          orientation: "higher_is_better",
+        }),
+        pctInteracao: computeDelta(kpis.pctInteracao, kpisPrevious.pctInteracao, {
+          kind: "percent",
+          orientation: "higher_is_better",
+        }),
+        mqlRate: computeDelta(kpis.mqlRate, kpisPrevious.mqlRate, {
+          kind: "percent",
+          orientation: "higher_is_better",
+        }),
+        agendadoPlus: computeDelta(kpis.agendadoPlus, kpisPrevious.agendadoPlus, {
+          kind: "count",
+          orientation: "higher_is_better",
+        }),
+        anunciosAtivos: computeDelta(
+          kpis.anunciosAtivos,
+          kpisPrevious.anunciosAtivos,
+          { kind: "count", orientation: "neutral" },
+        ),
+        campanhasAtivas: computeDelta(
+          kpis.campanhasAtivas,
+          kpisPrevious.campanhasAtivas,
+          { kind: "count", orientation: "neutral" },
+        ),
+      }
+    : null;
 
   return {
     workspaceId,
     range,
+    previousRange: prev,
     filters,
     dimensions,
-    kpis: computeKpis(filtered),
-    funnel: computeFunnel(filtered),
-    adsPerformance: computeAdsPerformance(filtered),
-    charts: buildAllCharts(filtered),
-    leads: filtered,
+    kpis,
+    kpisPrevious,
+    deltas,
+    funnel: computeFunnel(currentFiltered),
+    adsPerformance: computeAdsPerformance(currentFiltered),
+    charts: {
+      ...buildAllCharts(currentFiltered),
+      // MonthlyEvolution: dos 12 meses, SEM filtros aplicados (trajetória
+      // do workspace inteiro — decisão M8 pendência B).
+      monthlyEvolution: buildMonthlyEvolution(twelveMo.leads),
+    },
+    leads: currentFiltered,
     fetchedAt: new Date().toISOString(),
-    fetchMs,
-    totalNoPeriodo: base.length,
+    fetchMs: baseExpanded.fetchMs + twelveMo.fetchMs,
+    totalNoPeriodo: currentLeadsAll.length,
   };
 }
 

@@ -40,14 +40,17 @@ export async function GET(req: NextRequest) {
   const filters = parseFilters(url.searchParams);
 
   try {
-    const data = await getDashboardData(hmac.workspaceId, range, filters);
+    const data = await getDashboardData(hmac.workspaceId, range, filters, periodKey);
     return NextResponse.json(
       {
         workspace_id: data.workspaceId,
         period: { key: periodKey, range },
+        previous_range: data.previousRange,
         filters: data.filters,
         dimensions: data.dimensions,
         kpis: data.kpis,
+        kpis_previous: data.kpisPrevious,
+        deltas: data.deltas,
         funnel: data.funnel,
         ads_performance: data.adsPerformance,
         charts: data.charts,

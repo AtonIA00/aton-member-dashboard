@@ -191,6 +191,121 @@ export function buildStageDistribution(leads: LeadRow[]): StageDistributionPoint
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Evolução Mensal (M8) — rolling 12 meses
+
+export type MonthlyEvolutionPoint = {
+  /** "YYYY-MM" UTC. */
+  month: string;
+  /** Label legível em pt-BR pra eixo X (ex: "jan/26"). */
+  label: string;
+  total: number;
+  mqlSim: number;
+  agendado: number;
+  /** % Interação no mês, 0..100 (não 0..1 — facilita formato YAxis). */
+  interacao: number;
+};
+
+const PT_MONTHS = [
+  "jan", "fev", "mar", "abr", "mai", "jun",
+  "jul", "ago", "set", "out", "nov", "dez",
+];
+
+/**
+ * Bucketiza leads por mês UTC e calcula 4 séries pro chart Evolução Mensal.
+ *
+ * Input: leads do workspace nos últimos 12 meses (computado server-side
+ * em lib/leads.ts, INDEPENDENTE dos filtros — esse chart mostra a
+ * trajetória total do workspace).
+ *
+ * Preenchimento: meses vazios entre o primeiro mês com lead e o mês atual
+ * recebem total=0, mqlSim=0, agendado=0, interacao=0. Sem isso, o line
+ * chart "pula" meses e a leitura fica quebrada.
+ *
+ * Limite: máximo 12 meses (rolling window). Se workspace tem mais
+ * histórico, mostra só os últimos 12.
+ */
+export function buildMonthlyEvolution(leads: LeadRow[]): MonthlyEvolutionPoint[] {
+  if (leads.length === 0) return [];
+
+  type Bucket = { total: number; mqlSim: number; agendado: number; novo: number };
+  const map = new Map<string, Bucket>();
+
+  // Janela: últimos 12 meses contando o mês corrente.
+  const now = new Date();
+  const cutoff = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
+
+  let minMonth: string | null = null;
+  let maxMonth: string | null = null;
+
+  for (const l of leads) {
+    if (!l.data) continue;
+    const month = l.data.slice(0, 7); // "YYYY-MM"
+    if (!/^\d{4}-\d{2}$/.test(month)) continue;
+
+    // Drop tudo anterior ao cutoff (rolling 12 meses).
+    const d = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1));
+    if (d < cutoff) continue;
+
+    const isMqlSim = (l.mql ?? "").toLowerCase().trim() === "sim";
+    const grupo = classify(l.etapa_funil);
+    const isAgendado = grupo === "Agendado+";
+    const isNovo = grupo === "Novo";
+
+    const bucket = map.get(month);
+    if (bucket) {
+      bucket.total++;
+      if (isMqlSim) bucket.mqlSim++;
+      if (isAgendado) bucket.agendado++;
+      if (isNovo) bucket.novo++;
+    } else {
+      map.set(month, {
+        total: 1,
+        mqlSim: isMqlSim ? 1 : 0,
+        agendado: isAgendado ? 1 : 0,
+        novo: isNovo ? 1 : 0,
+      });
+    }
+
+    if (!minMonth || month < minMonth) minMonth = month;
+    if (!maxMonth || month > maxMonth) maxMonth = month;
+  }
+
+  if (!minMonth || !maxMonth) return [];
+
+  // Preenche meses entre min e max (gera continuidade visual).
+  const points: MonthlyEvolutionPoint[] = [];
+  let [y, m] = minMonth.split("-").map(Number);
+  const [maxY, maxM] = maxMonth.split("-").map(Number);
+
+  while (y < maxY || (y === maxY && m <= maxM)) {
+    const month = `${y}-${String(m).padStart(2, "0")}`;
+    const b = map.get(month) ?? { total: 0, mqlSim: 0, agendado: 0, novo: 0 };
+    const interagiram = b.total - b.novo;
+    const interacao = b.total > 0 ? (interagiram / b.total) * 100 : 0;
+    const yy = String(y).slice(-2);
+    points.push({
+      month,
+      label: `${PT_MONTHS[m - 1]}/${yy}`,
+      total: b.total,
+      mqlSim: b.mqlSim,
+      agendado: b.agendado,
+      interacao: Number(interacao.toFixed(1)),
+    });
+    m++;
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
+  }
+
+  // Garantia adicional do limite 12 (defensivo se cutoff falhou).
+  if (points.length > 12) {
+    return points.slice(points.length - 12);
+  }
+  return points;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Estrutura agregada
 
 export type ChartsData = {

@@ -120,3 +120,88 @@ export function resolvePeriod(
     }
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Período anterior (M8 — comparativo)
+
+function parseIsoDay(iso: string): Date {
+  // Cria Date UTC à meia-noite — consistente com `data` da terrace360.
+  return new Date(
+    Date.UTC(
+      Number(iso.slice(0, 4)),
+      Number(iso.slice(5, 7)) - 1,
+      Number(iso.slice(8, 10)),
+    ),
+  );
+}
+
+function daysBetween(from: string, to: string): number {
+  // Quantos DIAS (inclusive) o range cobre — de YYYY-MM-DD a YYYY-MM-DD.
+  const a = parseIsoDay(from).getTime();
+  const b = parseIsoDay(to).getTime();
+  return Math.round((b - a) / 86_400_000) + 1;
+}
+
+function shiftDays(iso: string, deltaDays: number): string {
+  const d = parseIsoDay(iso);
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return isoDay(d);
+}
+
+/**
+ * Computa o período ANTERIOR ao recorte atual pra comparativo.
+ * Retorna null pra `all` (sem referência comparável).
+ *
+ * Regras (acordadas no spec M8):
+ * - Hoje → Ontem (1 dia)
+ * - Ontem → Anteontem (1 dia)
+ * - Mês atual PARCIAL (ex: 1-11 mai) → mesmos dias do mês passado (1-11 abr).
+ *   Importante: NÃO mês passado inteiro — distorce absolutos quando estamos
+ *   no dia 5 e comparamos com 30 dias.
+ * - Mês passado (mês inteiro) → mês retrasado (mês inteiro)
+ * - 7d/30d/90d → janela imediatamente anterior, mesma duração
+ * - Personalizado (X..Y) → janela de mesma duração imediatamente antes
+ * - Todo período → null (UI esconde chips)
+ */
+export function previousRange(range: DateRange, key?: PeriodKey): DateRange | null {
+  // Sem limite → sem comparativo.
+  if (!range.from || !range.to) return null;
+
+  // Mês passado completo → mês retrasado COMPLETO (mesmo número de dias do
+  // retrasado, não da duração do passado). Preserva semântica "mês a mês".
+  if (key === "last_month") {
+    const fromD = parseIsoDay(range.from);
+    const prevYear = fromD.getUTCFullYear();
+    const prevMonth = fromD.getUTCMonth() - 1; // mês retrasado
+    const prevFrom = new Date(Date.UTC(prevYear, prevMonth, 1));
+    const lastDay = new Date(Date.UTC(prevYear, prevMonth + 1, 0));
+    return { from: isoDay(prevFrom), to: isoDay(lastDay) };
+  }
+
+  // Mês atual parcial — caso especial: comparar com os mesmos dias do mês
+  // anterior. Detectado por: from é dia 1 E to é hoje (estamos no mês corrente).
+  // Robusto ao não-passagem de `key`: derivamos do shape do range.
+  if (key === "this_month") {
+    const fromD = parseIsoDay(range.from);
+    const toD = parseIsoDay(range.to);
+    // Mês anterior, mesmo dia inicial (1) e mesmo dia final.
+    const prevFromY = fromD.getUTCFullYear();
+    const prevFromM = fromD.getUTCMonth() - 1;
+    const prevTo = new Date(Date.UTC(prevFromY, prevFromM, toD.getUTCDate()));
+    // Se mês anterior não tem aquele dia (ex: 31 jan vs fev=28), trunca pro
+    // último dia do mês anterior.
+    const lastDayOfPrevMonth = new Date(Date.UTC(prevFromY, prevFromM + 1, 0)).getUTCDate();
+    const prevToDay = Math.min(toD.getUTCDate(), lastDayOfPrevMonth);
+    const prevFrom = new Date(Date.UTC(prevFromY, prevFromM, 1));
+    const prevToFinal = new Date(Date.UTC(prevFromY, prevFromM, prevToDay));
+    return { from: isoDay(prevFrom), to: isoDay(prevToFinal) };
+  }
+
+  // Default: janela imediatamente anterior com mesma duração.
+  // (Cobre today→yesterday, yesterday→anteontem, 7d/30d/90d, last_month→
+  // antepenúltimo mês, custom→sliding window).
+  const dur = daysBetween(range.from, range.to);
+  const prevTo = shiftDays(range.from, -1);
+  const prevFrom = shiftDays(prevTo, -(dur - 1));
+  return { from: prevFrom, to: prevTo };
+}

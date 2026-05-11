@@ -1,6 +1,13 @@
-import type { Kpis } from "@/lib/leads";
+import type { Deltas, Kpis } from "@/lib/leads";
+import type { Delta } from "@/lib/deltas";
 
-type Props = { kpis: Kpis };
+type Props = {
+  kpis: Kpis;
+  /** KPIs do período anterior — usado pro contexto "X no período anterior". */
+  kpisPrevious: Kpis | null;
+  /** Deltas por KPI. null = "Todo período" ou sem referência → chips ocultos. */
+  deltas: Deltas | null;
+};
 
 function pct(n: number): string {
   return (n * 100).toFixed(1).replace(".", ",") + "%";
@@ -13,60 +20,79 @@ function int(n: number): string {
 type Card = {
   label: string;
   value: string;
+  /** Valor "atual" e "anterior" pra tooltip + sub-linha contextual. */
+  valuePrevious?: string;
   sub?: string;
-  accent?: "cyan" | "green" | "amber" | "neutral";
+  accent: "cyan" | "green" | "amber" | "neutral";
+  delta?: Delta;
 };
 
-const ACCENT_BAR: Record<NonNullable<Card["accent"]>, string> = {
+const ACCENT_BAR: Record<Card["accent"], string> = {
   cyan: "from-[color:var(--primary)]",
   green: "from-[#69F0AE]",
   amber: "from-[#FFD740]",
   neutral: "from-[color:var(--muted-foreground)]",
 };
 
-const ACCENT_TEXT: Record<NonNullable<Card["accent"]>, string> = {
-  cyan: "text-[color:var(--foreground)]",
-  green: "text-[color:var(--foreground)]",
-  amber: "text-[color:var(--foreground)]",
-  neutral: "text-[color:var(--foreground)]",
+const CHIP_STYLE: Record<Delta["classification"], string> = {
+  // outline: border + texto colorido, sem fundo.
+  positive: "border-[#69F0AE]/55 text-[#69F0AE]",
+  negative: "border-[color:var(--destructive)]/55 text-[color:var(--destructive)]",
+  neutral: "border-[color:var(--muted-foreground)]/40 text-[color:var(--muted-foreground)]",
 };
 
-export function KpiRow({ kpis }: Props) {
+function deltaTooltip(currentLabel: string, previousLabel: string): string {
+  return `Atual: ${currentLabel} | Anterior: ${previousLabel}`;
+}
+
+export function KpiRow({ kpis, kpisPrevious, deltas }: Props) {
   const cards: Card[] = [
     {
       label: "Total de Leads",
       value: int(kpis.total),
+      valuePrevious: kpisPrevious ? int(kpisPrevious.total) : undefined,
       accent: "cyan",
+      delta: deltas?.total,
     },
     {
       label: "% Interação",
       value: pct(kpis.pctInteracao),
+      valuePrevious: kpisPrevious ? pct(kpisPrevious.pctInteracao) : undefined,
       sub: `${int(kpis.interagiram)} / ${int(kpis.total)}`,
       accent: "cyan",
+      delta: deltas?.pctInteracao,
     },
     {
       label: "MQL Rate",
       value: pct(kpis.mqlRate),
+      valuePrevious: kpisPrevious ? pct(kpisPrevious.mqlRate) : undefined,
       sub: `${int(kpis.mqlSim)} qualificados`,
       accent: "green",
+      delta: deltas?.mqlRate,
     },
     {
       label: "Agendamento+",
-      value: `${int(kpis.agendadoPlus)}`,
+      value: int(kpis.agendadoPlus),
+      valuePrevious: kpisPrevious ? int(kpisPrevious.agendadoPlus) : undefined,
       sub: `${pct(kpis.pctAgendamento)} do total`,
       accent: "amber",
+      delta: deltas?.agendadoPlus,
     },
     {
       label: "Anúncios ativos",
       value: int(kpis.anunciosAtivos),
+      valuePrevious: kpisPrevious ? int(kpisPrevious.anunciosAtivos) : undefined,
       sub: "distintos",
       accent: "neutral",
+      delta: deltas?.anunciosAtivos,
     },
     {
       label: "Campanhas ativas",
       value: int(kpis.campanhasAtivas),
+      valuePrevious: kpisPrevious ? int(kpisPrevious.campanhasAtivas) : undefined,
       sub: "distintas",
       accent: "neutral",
+      delta: deltas?.campanhasAtivas,
     },
   ];
 
@@ -75,33 +101,46 @@ export function KpiRow({ kpis }: Props) {
       aria-label="Indicadores principais"
       className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6"
     >
-      {cards.map((c) => {
-        const accent = c.accent ?? "neutral";
-        return (
+      {cards.map((c) => (
+        <div
+          key={c.label}
+          className="relative overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color:var(--card)]/70 p-5 backdrop-blur transition-colors hover:border-[color:var(--primary)]/30"
+        >
           <div
-            key={c.label}
-            className="relative overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color:var(--card)]/70 p-5 backdrop-blur transition-colors hover:border-[color:var(--primary)]/30"
-          >
-            <div
-              aria-hidden
-              className={`absolute left-0 top-0 h-full w-[3px] bg-gradient-to-b ${ACCENT_BAR[accent]} to-transparent opacity-80`}
-            />
-            <div
-              className={`font-[family-name:var(--font-montserrat)] text-3xl font-bold leading-none ${ACCENT_TEXT[accent]}`}
-            >
-              {c.value}
-            </div>
-            <div className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-[color:var(--muted-foreground)]">
-              {c.label}
-            </div>
-            {c.sub && (
-              <div className="mt-1.5 truncate text-[11px] text-[color:var(--muted-foreground)]/80">
-                {c.sub}
-              </div>
-            )}
+            aria-hidden
+            className={`absolute left-0 top-0 h-full w-[3px] bg-gradient-to-b ${ACCENT_BAR[c.accent]} to-transparent opacity-80`}
+          />
+          <div className="font-[family-name:var(--font-montserrat)] text-3xl font-bold leading-none text-[color:var(--foreground)]">
+            {c.value}
           </div>
-        );
-      })}
+          <div className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-[color:var(--muted-foreground)]">
+            {c.label}
+          </div>
+          {c.sub && (
+            <div className="mt-1.5 truncate text-[11px] text-[color:var(--muted-foreground)]/80">
+              {c.sub}
+            </div>
+          )}
+          {c.delta && c.valuePrevious !== undefined && (
+            <>
+              <div
+                title={deltaTooltip(c.value, c.valuePrevious)}
+                className={
+                  "mt-3 inline-flex h-[26px] items-center rounded-full border bg-transparent px-3 text-[12px] font-medium " +
+                  CHIP_STYLE[c.delta.classification]
+                }
+              >
+                {c.delta.formatted}
+              </div>
+              {c.delta.direction !== "new" && (
+                <div className="mt-1 truncate text-[11px] text-[color:var(--muted-foreground)]/70">
+                  {c.valuePrevious} no período anterior
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      ))}
     </section>
   );
 }
