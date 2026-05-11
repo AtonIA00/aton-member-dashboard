@@ -9,6 +9,10 @@ import { LeadsTable } from "./LeadsTable";
 import { PeriodPicker } from "./PeriodPicker";
 import { TierBadge } from "./TierBadge";
 import { FilterBar } from "./FilterBar";
+import { DailyVolumeChart } from "./charts/DailyVolumeChart";
+import { CampaignVolumeChart } from "./charts/CampaignVolumeChart";
+import { MqlDonutChart } from "./charts/MqlDonutChart";
+import { StageDistributionChart } from "./charts/StageDistributionChart";
 
 type Props = {
   workspaceId: string;
@@ -100,6 +104,31 @@ export async function Dashboard({
             <div className="mt-8">
               <AdsPerformanceTable rows={data.adsPerformance} />
             </div>
+
+            {/* Análise visual — M5 */}
+            <section aria-label="Análise visual" className="mt-10">
+              <div className="mb-4 flex items-center gap-2">
+                <span aria-hidden className="block h-4 w-1 rounded-sm bg-[color:var(--primary)]" />
+                <h2 className="font-[family-name:var(--font-montserrat)] text-xs font-bold uppercase tracking-[0.15em] text-[color:var(--muted-foreground)]">
+                  Análise visual
+                </h2>
+              </div>
+              {/* Linha 1: 2:1 (line precisa de mais largura) */}
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                <div className="lg:col-span-2">
+                  <DailyVolumeChart data={data.charts.dailyVolume} />
+                </div>
+                <div>
+                  <MqlDonutChart data={data.charts.mqlDonut} />
+                </div>
+              </div>
+              {/* Linha 2: 1:1 */}
+              <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <CampaignVolumeChart data={data.charts.campaignVolume} />
+                <StageDistributionChart data={data.charts.stageDistribution} />
+              </div>
+            </section>
+
             <div className="mt-8">
               <LeadsTable leads={data.leads} />
             </div>
@@ -109,7 +138,7 @@ export async function Dashboard({
         <div className="mt-auto pt-10 text-center text-[11px] text-[color:var(--muted-foreground)]">
           <span className="font-mono">member-dashboard.aton-ia.com.br</span>
           <span className="mx-2 opacity-50">·</span>
-          <span>Marco 4 — Filtros avançados</span>
+          <span>Marco 5 — Charts</span>
           <span className="mx-2 opacity-50">·</span>
           <span className="tabular-nums">fetch {data.fetchMs}ms</span>
           {filtersActive && (

@@ -9,6 +9,7 @@ import {
   type Dimensions,
   type Filters,
 } from "./filters";
+import { buildAllCharts, type ChartsData } from "./charts";
 
 // Linha crua da terrace360_leads_atonhub — apenas as colunas que o dashboard
 // consome. Demais colunas (probabilidade_avanco, dia_hora_semana, cliente,
@@ -64,6 +65,8 @@ export type DashboardData = {
   kpis: Kpis;
   funnel: FunnelStep[];
   adsPerformance: AdsPerfRow[];
+  /** Dados pros 4 charts (M5) — derivados dos mesmos leads filtrados. */
+  charts: ChartsData;
   leads: LeadRow[];
   fetchedAt: string;
   fetchMs: number;
@@ -175,6 +178,7 @@ export async function getDashboardData(
     kpis: computeKpis(filtered),
     funnel: computeFunnel(filtered),
     adsPerformance: computeAdsPerformance(filtered),
+    charts: buildAllCharts(filtered),
     leads: filtered,
     fetchedAt: new Date().toISOString(),
     fetchMs,
