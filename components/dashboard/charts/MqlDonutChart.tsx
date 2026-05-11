@@ -13,7 +13,7 @@ export function MqlDonutChart({ data }: { data: MqlDonutSlice[] }) {
   if (total === 0) {
     return (
       <ChartCard title="MQL — Qualificação">
-        <EmptyChart message="Sem dados de MQL" height={HEIGHT} />
+        <EmptyChart message="Sem dados pra compor a qualificação MQL." height={HEIGHT} />
       </ChartCard>
     );
   }
@@ -40,7 +40,8 @@ export function MqlDonutChart({ data }: { data: MqlDonutSlice[] }) {
               outerRadius="86%"
               paddingAngle={1}
               isAnimationActive
-              animationDuration={700}
+              animationDuration={400}
+              animationEasing="ease-out"
               strokeWidth={0}
             >
               {data.map((slice, i) => (
@@ -58,8 +59,8 @@ export function MqlDonutChart({ data }: { data: MqlDonutSlice[] }) {
       </div>
       {isAllSemMql && (
         <div className="mt-2 rounded border border-[color:var(--border)] bg-white/[0.02] px-3 py-2 text-[11px] text-[color:var(--muted-foreground)]">
-          Esse workspace ainda não tem qualificação MQL marcada. Configure no
-          agente pra ver a distribuição.
+          Seu agente ainda não marcou MQL nesses leads. Fale com a Aton se
+          quiser orientação pra ativar a qualificação automática.
         </div>
       )}
     </ChartCard>

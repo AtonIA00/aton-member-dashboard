@@ -70,7 +70,7 @@ export function UpsellScreen({ workspaceName }: Props) {
               direto do painel da Aton — sem precisar pedir relatório ao seu CS.
             </p>
 
-            <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
+            <div className="mt-10 flex flex-wrap items-center gap-x-4 gap-y-3">
               <a
                 href={WHATSAPP_CTA}
                 target="_blank"
@@ -89,7 +89,30 @@ export function UpsellScreen({ workspaceName }: Props) {
                 </svg>
                 Falar com a Aton
               </a>
-              <span className="text-xs text-[color:var(--muted-foreground)]">
+              <a
+                href="https://aton-ia.com.br"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-transparent px-5 py-3.5 font-[family-name:var(--font-montserrat)] text-sm font-semibold tracking-wide text-[color:var(--foreground)] transition-colors hover:border-[color:var(--primary)]/40 hover:text-[color:var(--primary)]"
+              >
+                Saber mais
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <line x1="7" y1="17" x2="17" y2="7" />
+                  <polyline points="7 7 17 7 17 17" />
+                </svg>
+              </a>
+              <span className="text-xs text-[color:var(--muted-foreground)] basis-full sm:basis-auto">
                 Trial de 7 dias disponível para Pro/Enterprise
               </span>
             </div>

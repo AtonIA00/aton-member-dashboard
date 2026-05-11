@@ -33,8 +33,8 @@ export function CampaignVolumeChart({ data }: { data: CampaignVolumePoint[] }) {
         <EmptyChart
           message={
             data.length === 0
-              ? "Sem campanhas no período"
-              : "Disponível com mais de 1 campanha"
+              ? "Nenhuma campanha encontrada no recorte."
+              : "Disponível quando houver mais de uma campanha ativa."
           }
           height={HEIGHT}
         />
@@ -87,7 +87,8 @@ export function CampaignVolumeChart({ data }: { data: CampaignVolumePoint[] }) {
               name="Leads"
               radius={[0, 4, 4, 0]}
               isAnimationActive
-              animationDuration={700}
+              animationDuration={400}
+              animationEasing="ease-out"
             >
               {data.map((_, i) => (
                 <Cell key={i} fill="#00E5FF" fillOpacity={0.85 - i * 0.04} />

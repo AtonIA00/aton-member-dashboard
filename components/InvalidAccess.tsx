@@ -39,7 +39,14 @@ export function InvalidAccess() {
 
         <p className="mx-auto mt-5 max-w-md text-base leading-relaxed text-[color:var(--muted-foreground)] sm:text-lg">
           Volte ao painel da Aton e tente novamente. Se o problema persistir,
-          fale com o seu CS.
+          fale com o suporte:{" "}
+          <a
+            href="mailto:suporte@atonbot.cc"
+            className="font-medium text-[color:var(--primary)] hover:underline"
+          >
+            suporte@atonbot.cc
+          </a>
+          .
         </p>
 
         <div className="mt-12 text-xs text-[color:var(--muted-foreground)]">

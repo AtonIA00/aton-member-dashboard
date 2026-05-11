@@ -56,6 +56,9 @@ export default async function Page({
       userName={userName}
       tier={access.tier}
       daysUntilExpiry={access.daysUntilExpiry}
+      hoursUntilExpiry={access.hoursUntilExpiry}
+      habilitadoAt={access.habilitadoAt}
+      expiresAt={access.expiresAt}
       periodKey={periodKey}
       customFrom={customFrom}
       customTo={customTo}

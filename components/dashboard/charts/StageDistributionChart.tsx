@@ -29,7 +29,7 @@ export function StageDistributionChart({ data }: { data: StageDistributionPoint[
   if (total === 0) {
     return (
       <ChartCard title="Distribuição por Etapa">
-        <EmptyChart message="Sem dados de etapa" height={HEIGHT} />
+        <EmptyChart message="Sem dados pra distribuir por etapa do funil." height={HEIGHT} />
       </ChartCard>
     );
   }
@@ -71,7 +71,8 @@ export function StageDistributionChart({ data }: { data: StageDistributionPoint[
               name="Leads"
               radius={[0, 4, 4, 0]}
               isAnimationActive
-              animationDuration={700}
+              animationDuration={400}
+              animationEasing="ease-out"
             >
               {data.map((d, i) => (
                 <Cell key={i} fill={d.color} fillOpacity={0.85} />

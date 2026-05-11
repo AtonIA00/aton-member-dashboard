@@ -39,7 +39,7 @@ export function DailyVolumeChart({ data }: { data: DailyVolumePoint[] }) {
       subtitle={data.length > 0 ? `${data.length} dia${data.length === 1 ? "" : "s"}` : undefined}
     >
       {data.length === 0 ? (
-        <EmptyChart message="Sem dados no período" height={HEIGHT} />
+        <EmptyChart message="Sem dados pra montar a série temporal." height={HEIGHT} />
       ) : (
         <div style={{ width: "100%", height: HEIGHT }}>
           <ResponsiveContainer>
@@ -85,7 +85,8 @@ export function DailyVolumeChart({ data }: { data: DailyVolumePoint[] }) {
                 dot={{ r: 2.5, fill: "#00E5FF" }}
                 activeDot={{ r: 5 }}
                 isAnimationActive
-                animationDuration={800}
+                animationDuration={400}
+                animationEasing="ease-out"
               />
               <Line
                 type="monotone"
@@ -96,7 +97,8 @@ export function DailyVolumeChart({ data }: { data: DailyVolumePoint[] }) {
                 dot={{ r: 2.5, fill: "#69F0AE" }}
                 activeDot={{ r: 5 }}
                 isAnimationActive
-                animationDuration={800}
+                animationDuration={400}
+                animationEasing="ease-out"
               />
             </LineChart>
           </ResponsiveContainer>

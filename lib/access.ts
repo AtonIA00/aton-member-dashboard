@@ -7,14 +7,20 @@ export type AccessRow = {
   tier: Tier;
   habilitado: boolean;
   expira_em: string | null; // ISO timestamp ou null (sem expiração)
+  habilitado_em: string | null; // ISO timestamp da data em que CS liberou
 };
 
 export type AccessGranted = {
   granted: true;
   tier: Tier;
+  /** ISO timestamp de quando foi habilitado (pro tooltip do badge). */
+  habilitadoAt: Date | null;
   expiresAt: Date | null;
   /** Dias inteiros até expirar (arredondado pra cima). null = sem expiração. */
   daysUntilExpiry: number | null;
+  /** Horas inteiras até expirar (arredondado pra cima). null = sem expiração.
+   *  Usado pelo TierBadge na faixa <24h. */
+  hoursUntilExpiry: number | null;
 };
 export type AccessDenied = { granted: false };
 export type AccessResult = AccessGranted | AccessDenied;
@@ -22,20 +28,19 @@ export type AccessResult = AccessGranted | AccessDenied;
 /**
  * Verifica se uma workspace tem dashboard habilitado.
  *
- * Replica a regra:
- *   SELECT 1 FROM wa_member_dashboard_access
+ * Regra:
+ *   SELECT * FROM wa_member_dashboard_access
  *   WHERE uchat_workspace_id = $1
  *     AND habilitado = true
  *     AND (expira_em IS NULL OR expira_em > now())
  *
  * Falha silenciosa em qualquer erro de banco — retorna `granted: false`.
- * O erro é logado server-side (sem PII) pra debug.
  */
 export async function checkDashboardAccess(workspaceId: string): Promise<AccessResult> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("wa_member_dashboard_access")
-    .select("tier, habilitado, expira_em")
+    .select("tier, habilitado, expira_em, habilitado_em")
     .eq("uchat_workspace_id", workspaceId)
     .eq("habilitado", true)
     .maybeSingle<AccessRow>();
@@ -52,10 +57,17 @@ export async function checkDashboardAccess(workspaceId: string): Promise<AccessR
     return { granted: false };
   }
 
-  // Filtro de expiração aplicado no client (a single-row query não suporta
-  // OR condicional limpo no .or() do supabase-js sem string-eval).
+  // habilitado_em: pode ser null em rows antigas — defensivo.
+  let habilitadoAt: Date | null = null;
+  if (data.habilitado_em) {
+    const d = new Date(data.habilitado_em);
+    if (!Number.isNaN(d.getTime())) habilitadoAt = d;
+  }
+
+  // expira_em: null = sem expiração (pro/enterprise). Caso vencido, recusa.
   let expiresAt: Date | null = null;
   let daysUntilExpiry: number | null = null;
+  let hoursUntilExpiry: number | null = null;
   if (data.expira_em) {
     expiresAt = new Date(data.expira_em);
     if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
@@ -63,12 +75,15 @@ export async function checkDashboardAccess(workspaceId: string): Promise<AccessR
     }
     const msLeft = expiresAt.getTime() - Date.now();
     daysUntilExpiry = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+    hoursUntilExpiry = Math.ceil(msLeft / (1000 * 60 * 60));
   }
 
   return {
     granted: true,
     tier: data.tier,
+    habilitadoAt,
     expiresAt,
     daysUntilExpiry,
+    hoursUntilExpiry,
   };
 }

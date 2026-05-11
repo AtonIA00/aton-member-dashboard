@@ -20,6 +20,9 @@ type Props = {
   userName: string;
   tier: Tier;
   daysUntilExpiry: number | null;
+  hoursUntilExpiry: number | null;
+  habilitadoAt: Date | null;
+  expiresAt: Date | null;
   periodKey: PeriodKey;
   customFrom?: string;
   customTo?: string;
@@ -32,6 +35,9 @@ export async function Dashboard({
   userName,
   tier,
   daysUntilExpiry,
+  hoursUntilExpiry,
+  habilitadoAt,
+  expiresAt,
   periodKey,
   customFrom,
   customTo,
@@ -71,7 +77,13 @@ export async function Dashboard({
           </div>
           <div className="flex flex-wrap items-center gap-4">
             <PeriodPicker />
-            <TierBadge tier={tier} daysUntilExpiry={daysUntilExpiry} />
+            <TierBadge
+              tier={tier}
+              daysUntilExpiry={daysUntilExpiry}
+              hoursUntilExpiry={hoursUntilExpiry}
+              habilitadoAt={habilitadoAt}
+              expiresAt={expiresAt}
+            />
           </div>
         </header>
 
@@ -86,14 +98,14 @@ export async function Dashboard({
         {data.totalNoPeriodo === 0 ? (
           // Caso A: período sem nenhum lead.
           <EmptyState
-            title="Sem leads no período selecionado"
-            body="Quando o agente capturar leads pela campanha, eles aparecem aqui. Tente ampliar o período no dropdown acima."
+            title="Você ainda não recebeu leads nesse período"
+            body="Tente um intervalo maior no dropdown acima. Se acredita que deveria ter leads aqui, fale com a Aton."
           />
         ) : data.kpis.total === 0 && filtersActive ? (
           // Caso B: período tem leads, mas filtros zeraram.
           <EmptyState
-            title="Nenhum lead com esses filtros"
-            body={`Você tem ${data.totalNoPeriodo.toLocaleString("pt-BR")} ${data.totalNoPeriodo === 1 ? "lead" : "leads"} no período. Limpe os filtros ou ajuste-os pra ver resultados.`}
+            title="Nenhum lead bateu com os filtros selecionados"
+            body={`Você tem ${data.totalNoPeriodo.toLocaleString("pt-BR")} ${data.totalNoPeriodo === 1 ? "lead" : "leads"} no período. Limpe os filtros ou ajuste o período pra ver resultados.`}
             highlightActions
           />
         ) : (
@@ -138,7 +150,7 @@ export async function Dashboard({
         <div className="mt-auto pt-10 text-center text-[11px] text-[color:var(--muted-foreground)]">
           <span className="font-mono">member-dashboard.aton-ia.com.br</span>
           <span className="mx-2 opacity-50">·</span>
-          <span>Marco 5 — Charts</span>
+          <span>Aton IA</span>
           <span className="mx-2 opacity-50">·</span>
           <span className="tabular-nums">fetch {data.fetchMs}ms</span>
           {filtersActive && (
