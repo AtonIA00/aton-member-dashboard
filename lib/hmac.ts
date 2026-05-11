@@ -102,6 +102,21 @@ export function validateUchatSignature(
   };
 
   if (!matches(expectedStr) && !matches(expectedNum)) {
+    // TEMP DEBUG (M6 polimento + Casa Nova): log de bad_signature pra ver o
+    // que a Uchat real está enviando vs o que esperamos. NÃO loga PII nem a
+    // chave — só workspace/user/timestamp (que vão no URL público mesmo) +
+    // os 2 hashes computados (pública por dedução, mas inocuo). Remover
+    // este bloco assim que diagnosticarmos.
+    console.warn("[hmac][debug bad_signature]", {
+      workspace_id,
+      user_id,
+      timestamp,
+      received_signature: signature,
+      expected_as_strings: expectedStr,
+      expected_as_numbers: expectedNum,
+      payload_strings: dataAsStrings,
+      payload_numbers: dataAsNumbers,
+    });
     return { ok: false, reason: "bad_signature" };
   }
 
