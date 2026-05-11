@@ -5,6 +5,7 @@ import { parseFilters } from "@/lib/filters";
 import { InvalidAccess } from "@/components/InvalidAccess";
 import { UpsellScreen } from "@/components/UpsellScreen";
 import { Dashboard } from "@/components/dashboard/Dashboard";
+import { parseTab } from "@/lib/tabs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -47,6 +48,19 @@ export default async function Page({
   const customFrom = firstString(sp.from);
   const customTo = firstString(sp.to);
   const filters = parseFilters(sp);
+  const tab = parseTab(firstString(sp.tab));
+
+  // Params HMAC repassados pro Client Component do TonChat — ele usa pra
+  // autenticar /api/ton/chat e /api/ton/threads. Signature original já foi
+  // validada server-side; o client só replica nos requests subsequentes.
+  const hmacForClient = {
+    workspace_id: params.workspace_id!,
+    user_id: params.user_id!,
+    timestamp: params.timestamp!,
+    signature: params.signature!,
+    user_name: firstString(sp.user_name),
+    workspace_name: workspaceName || undefined,
+  };
 
   return (
     <Dashboard
@@ -61,6 +75,8 @@ export default async function Page({
       customFrom={customFrom}
       customTo={customTo}
       filters={filters}
+      tab={tab}
+      hmac={hmacForClient}
     />
   );
 }

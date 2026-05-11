@@ -2,6 +2,7 @@ import { getDashboardData } from "@/lib/leads";
 import { PERIOD_LABEL, parsePeriodKey, resolvePeriod, type PeriodKey } from "@/lib/period";
 import { hasAnyFilter, type Filters } from "@/lib/filters";
 import type { Tier } from "@/lib/access";
+import { isTonEnabledForTier } from "@/lib/ton/auth";
 import { KpiRow } from "./KpiRow";
 import { Funnel } from "./Funnel";
 import { AdsPerformanceTable } from "./AdsPerformanceTable";
@@ -14,6 +15,18 @@ import { CampaignVolumeChart } from "./charts/CampaignVolumeChart";
 import { MqlDonutChart } from "./charts/MqlDonutChart";
 import { StageDistributionChart } from "./charts/StageDistributionChart";
 import { MonthlyEvolutionChart } from "./charts/MonthlyEvolutionChart";
+import { TabSwitcher } from "./TabSwitcher";
+import type { TabKey } from "@/lib/tabs";
+import { TonView } from "@/components/ton/TonView";
+
+type HmacParams = {
+  workspace_id: string;
+  user_id: string;
+  timestamp: string;
+  signature: string;
+  user_name?: string;
+  workspace_name?: string;
+};
 
 type Props = {
   workspaceId: string;
@@ -27,6 +40,10 @@ type Props = {
   customFrom?: string;
   customTo?: string;
   filters: Filters;
+  /** Aba ativa (M9). 'dashboard' default. */
+  tab: TabKey;
+  /** Params HMAC do iframe original — repassados pro TonView (chat usa). */
+  hmac: HmacParams;
 };
 
 export async function Dashboard({
@@ -41,12 +58,24 @@ export async function Dashboard({
   customFrom,
   customTo,
   filters,
+  tab,
+  hmac,
 }: Props) {
-  const range = resolvePeriod(periodKey, customFrom, customTo);
-  const data = await getDashboardData(workspaceId, range, filters, periodKey);
+  const tonAvailable = isTonEnabledForTier(tier);
+  const isTonTab = tab === "ton" && tonAvailable
+    // Se tab=ton mas tier não tem TON, mostra a tela de upsell (TonView decide)
+    || tab === "ton";
 
-  const periodSummary = formatPeriodSummary(periodKey, range);
-  const filtersActive = hasAnyFilter(data.filters);
+  // Fetch só quando estamos no tab Dashboard. Aba TON não precisa do
+  // agregado pesado — economiza um fetch a cada navegação.
+  const dashboardDataPromise = isTonTab
+    ? null
+    : getDashboardData(
+        workspaceId,
+        resolvePeriod(periodKey, customFrom, customTo),
+        filters,
+        periodKey,
+      );
 
   return (
     <main className="relative min-h-screen overflow-hidden">
@@ -69,12 +98,10 @@ export async function Dashboard({
             <h1 className="mt-2 truncate font-[family-name:var(--font-montserrat)] text-3xl font-bold leading-tight text-[color:var(--foreground)] sm:text-4xl">
               {workspaceName}
             </h1>
-            <p className="mt-2 text-sm text-[color:var(--muted-foreground)]">
-              {periodSummary}
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-4">
-            <PeriodPicker />
+            {/* PeriodPicker só faz sentido na aba Dashboard */}
+            {!isTonTab && <PeriodPicker />}
             <TierBadge
               tier={tier}
               daysUntilExpiry={daysUntilExpiry}
@@ -85,92 +112,111 @@ export async function Dashboard({
           </div>
         </header>
 
-        {/* FilterBar — só aparece se tem leads no período */}
-        <FilterBar dimensions={data.dimensions} totalNoPeriodo={data.totalNoPeriodo} />
+        {/* Tab switcher — só renderiza se workspace tem acesso ao TON */}
+        <TabSwitcher active={tab} tonAvailable={tonAvailable} />
 
-        {/* KPIs (M8: deltas + chip outline + linha "X no período anterior") */}
-        <div className="mt-6">
-          <KpiRow
-            kpis={data.kpis}
-            kpisPrevious={data.kpisPrevious}
-            deltas={data.deltas}
-          />
-        </div>
-
-        {data.totalNoPeriodo === 0 ? (
-          // Caso A: período sem nenhum lead.
-          <EmptyState
-            title="Você ainda não recebeu leads nesse período"
-            body="Tente um intervalo maior no dropdown acima. Se acredita que deveria ter leads aqui, fale com a Aton."
-          />
-        ) : data.kpis.total === 0 && filtersActive ? (
-          // Caso B: período tem leads, mas filtros zeraram.
-          <EmptyState
-            title="Nenhum lead bateu com os filtros selecionados"
-            body={`Você tem ${data.totalNoPeriodo.toLocaleString("pt-BR")} ${data.totalNoPeriodo === 1 ? "lead" : "leads"} no período. Limpe os filtros ou ajuste o período pra ver resultados.`}
-            highlightActions
-          />
+        {/* Conteúdo conforme a aba ativa */}
+        {isTonTab ? (
+          <TonView tier={tier} hmac={hmac} />
         ) : (
-          <>
-            <div className="mt-8">
-              <Funnel steps={data.funnel} />
-            </div>
-            <div className="mt-8">
-              <AdsPerformanceTable rows={data.adsPerformance} />
-            </div>
-
-            {/* Análise visual — M5 + M8 */}
-            <section aria-label="Análise visual" className="mt-10">
-              <div className="mb-4 flex items-center gap-2">
-                <span aria-hidden className="block h-4 w-1 rounded-sm bg-[color:var(--primary)]" />
-                <h2 className="font-[family-name:var(--font-montserrat)] text-xs font-bold uppercase tracking-[0.15em] text-[color:var(--muted-foreground)]">
-                  Análise visual
-                </h2>
-              </div>
-              {/* M8: Evolução Mensal full-width no topo — trajetória do workspace */}
-              <div>
-                <MonthlyEvolutionChart data={data.charts.monthlyEvolution} />
-              </div>
-              {/* Linha 2: 2:1 (line precisa de mais largura) */}
-              <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-                <div className="lg:col-span-2">
-                  <DailyVolumeChart data={data.charts.dailyVolume} />
-                </div>
-                <div>
-                  <MqlDonutChart data={data.charts.mqlDonut} />
-                </div>
-              </div>
-              {/* Linha 3: 1:1 */}
-              <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <CampaignVolumeChart data={data.charts.campaignVolume} />
-                <StageDistributionChart data={data.charts.stageDistribution} />
-              </div>
-            </section>
-
-            <div className="mt-8">
-              <LeadsTable leads={data.leads} />
-            </div>
-          </>
+          dashboardDataPromise && (
+            <DashboardContent
+              data={await dashboardDataPromise}
+              periodKey={periodKey}
+              customFrom={customFrom}
+              customTo={customTo}
+            />
+          )
         )}
 
         <div className="mt-auto pt-10 text-center text-[11px] text-[color:var(--muted-foreground)]">
           <span className="font-mono">member-dashboard.aton-ia.com.br</span>
           <span className="mx-2 opacity-50">·</span>
           <span>Aton IA</span>
-          <span className="mx-2 opacity-50">·</span>
-          <span className="tabular-nums">fetch {data.fetchMs}ms</span>
-          {filtersActive && (
-            <>
-              <span className="mx-2 opacity-50">·</span>
-              <span className="tabular-nums">
-                {data.kpis.total.toLocaleString("pt-BR")} de{" "}
-                {data.totalNoPeriodo.toLocaleString("pt-BR")} leads após filtros
-              </span>
-            </>
-          )}
         </div>
       </div>
     </main>
+  );
+}
+
+type DashboardContentProps = {
+  data: Awaited<ReturnType<typeof getDashboardData>>;
+  periodKey: PeriodKey;
+  customFrom?: string;
+  customTo?: string;
+};
+
+function DashboardContent({ data, periodKey, customFrom, customTo }: DashboardContentProps) {
+  const range = resolvePeriod(periodKey, customFrom, customTo);
+  const periodSummary = formatPeriodSummary(periodKey, range);
+  const filtersActive = hasAnyFilter(data.filters);
+
+  return (
+    <>
+      <p className="mt-4 text-sm text-[color:var(--muted-foreground)]">{periodSummary}</p>
+
+      {/* FilterBar — só aparece se tem leads no período */}
+      <FilterBar dimensions={data.dimensions} totalNoPeriodo={data.totalNoPeriodo} />
+
+      {/* KPIs */}
+      <div className="mt-6">
+        <KpiRow
+          kpis={data.kpis}
+          kpisPrevious={data.kpisPrevious}
+          deltas={data.deltas}
+        />
+      </div>
+
+      {data.totalNoPeriodo === 0 ? (
+        <EmptyState
+          title="Você ainda não recebeu leads nesse período"
+          body="Tente um intervalo maior no dropdown acima. Se acredita que deveria ter leads aqui, fale com a Aton."
+        />
+      ) : data.kpis.total === 0 && filtersActive ? (
+        <EmptyState
+          title="Nenhum lead bateu com os filtros selecionados"
+          body={`Você tem ${data.totalNoPeriodo.toLocaleString("pt-BR")} ${data.totalNoPeriodo === 1 ? "lead" : "leads"} no período. Limpe os filtros ou ajuste o período pra ver resultados.`}
+          highlightActions
+        />
+      ) : (
+        <>
+          <div className="mt-8">
+            <Funnel steps={data.funnel} />
+          </div>
+          <div className="mt-8">
+            <AdsPerformanceTable rows={data.adsPerformance} />
+          </div>
+
+          <section aria-label="Análise visual" className="mt-10">
+            <div className="mb-4 flex items-center gap-2">
+              <span aria-hidden className="block h-4 w-1 rounded-sm bg-[color:var(--primary)]" />
+              <h2 className="font-[family-name:var(--font-montserrat)] text-xs font-bold uppercase tracking-[0.15em] text-[color:var(--muted-foreground)]">
+                Análise visual
+              </h2>
+            </div>
+            <div>
+              <MonthlyEvolutionChart data={data.charts.monthlyEvolution} />
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <DailyVolumeChart data={data.charts.dailyVolume} />
+              </div>
+              <div>
+                <MqlDonutChart data={data.charts.mqlDonut} />
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <CampaignVolumeChart data={data.charts.campaignVolume} />
+              <StageDistributionChart data={data.charts.stageDistribution} />
+            </div>
+          </section>
+
+          <div className="mt-8">
+            <LeadsTable leads={data.leads} />
+          </div>
+        </>
+      )}
+    </>
   );
 }
 
