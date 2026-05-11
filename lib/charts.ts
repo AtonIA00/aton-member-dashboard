@@ -19,6 +19,8 @@ export type DailyVolumePoint = {
   total: number;
   /** Leads com mql=sim do dia. */
   mql_sim: number;
+  /** Leads no grupo Agendado+ (agendado/especialista/negociacao/financeiro). */
+  agendado_plus: number;
 };
 
 /**
@@ -32,8 +34,8 @@ export type DailyVolumePoint = {
 export function buildDailyVolume(leads: LeadRow[]): DailyVolumePoint[] {
   if (leads.length === 0) return [];
 
-  // Bucket: dia UTC → {total, mqlSim}.
-  const map = new Map<string, { total: number; mql_sim: number }>();
+  // Bucket: dia UTC → {total, mqlSim, agendadoPlus}.
+  const map = new Map<string, { total: number; mql_sim: number; agendado_plus: number }>();
   let minDay = Number.POSITIVE_INFINITY;
   let maxDay = Number.NEGATIVE_INFINITY;
 
@@ -42,14 +44,19 @@ export function buildDailyVolume(leads: LeadRow[]): DailyVolumePoint[] {
     const day = l.data.slice(0, 10); // ISO "YYYY-MM-DDT..." → "YYYY-MM-DD"
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
 
+    const isMqlSim = (l.mql ?? "").toLowerCase().trim() === "sim";
+    const isAgendadoPlus = classify(l.etapa_funil) === "Agendado+";
+
     const bucket = map.get(day);
     if (bucket) {
       bucket.total++;
-      if ((l.mql ?? "").toLowerCase().trim() === "sim") bucket.mql_sim++;
+      if (isMqlSim) bucket.mql_sim++;
+      if (isAgendadoPlus) bucket.agendado_plus++;
     } else {
       map.set(day, {
         total: 1,
-        mql_sim: (l.mql ?? "").toLowerCase().trim() === "sim" ? 1 : 0,
+        mql_sim: isMqlSim ? 1 : 0,
+        agendado_plus: isAgendadoPlus ? 1 : 0,
       });
     }
 
@@ -75,6 +82,7 @@ export function buildDailyVolume(leads: LeadRow[]): DailyVolumePoint[] {
       date: day,
       total: bucket?.total ?? 0,
       mql_sim: bucket?.mql_sim ?? 0,
+      agendado_plus: bucket?.agendado_plus ?? 0,
     });
   }
 
@@ -116,29 +124,31 @@ export function buildCampaignVolume(leads: LeadRow[]): CampaignVolumePoint[] {
 // MQL Donut
 
 export type MqlDonutSlice = {
-  name: "Sim" | "Não" | "Sem MQL";
+  name: "Sim" | "Não";
   value: number;
   color: string;
 };
 
+/**
+ * Donut MQL — só conta leads que TÊM valor de MQL marcado (sim ou não).
+ * Leads sem MQL marcado (NULL no banco) são excluídos do total — a métrica
+ * é "qualificação sobre o universo dos leads avaliados", não sobre o total
+ * de leads do recorte.
+ */
 export function buildMqlDonut(leads: LeadRow[]): MqlDonutSlice[] {
   let sim = 0;
   let nao = 0;
-  let semMql = 0;
 
   for (const l of leads) {
     const v = (l.mql ?? "").toLowerCase().trim();
     if (v === "sim") sim++;
     else if (v === "não" || v === "nao") nao++;
-    else semMql++;
+    // Sem MQL marcado → ignora.
   }
 
-  // Mantemos as 3 fatias mesmo zeradas — o donut fica mais previsível
-  // visualmente (sempre mesmas 3 cores na legenda). Tooltip filtra zero.
   return [
     { name: "Sim", value: sim, color: "#69F0AE" },
     { name: "Não", value: nao, color: "#FF5252" },
-    { name: "Sem MQL", value: semMql, color: "rgba(232, 237, 242, 0.15)" },
   ];
 }
 

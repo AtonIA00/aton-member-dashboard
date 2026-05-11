@@ -13,19 +13,18 @@ export function MqlDonutChart({ data }: { data: MqlDonutSlice[] }) {
   if (total === 0) {
     return (
       <ChartCard title="MQL — Qualificação">
-        <EmptyChart message="Sem dados pra compor a qualificação MQL." height={HEIGHT} />
+        <EmptyChart
+          message="Nenhum lead com MQL marcado nesse recorte. Fale com a Aton se quiser ativar a qualificação automática."
+          height={HEIGHT}
+        />
       </ChartCard>
     );
   }
 
-  // Detecta workspace 100% sem MQL pra mostrar microcopy contextual.
-  const semMql = data.find((d) => d.name === "Sem MQL");
-  const isAllSemMql = semMql && semMql.value === total;
-
   return (
     <ChartCard
       title="MQL — Qualificação"
-      subtitle={`${total.toLocaleString("pt-BR")} leads`}
+      subtitle={`${total.toLocaleString("pt-BR")} leads avaliados`}
     >
       <div style={{ width: "100%", height: HEIGHT }}>
         <ResponsiveContainer>
@@ -57,12 +56,6 @@ export function MqlDonutChart({ data }: { data: MqlDonutSlice[] }) {
           </PieChart>
         </ResponsiveContainer>
       </div>
-      {isAllSemMql && (
-        <div className="mt-2 rounded border border-[color:var(--border)] bg-white/[0.02] px-3 py-2 text-[11px] text-[color:var(--muted-foreground)]">
-          Seu agente ainda não marcou MQL nesses leads. Fale com a Aton se
-          quiser orientação pra ativar a qualificação automática.
-        </div>
-      )}
     </ChartCard>
   );
 }

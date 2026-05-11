@@ -17,7 +17,6 @@ import { StageDistributionChart } from "./charts/StageDistributionChart";
 type Props = {
   workspaceId: string;
   workspaceName: string;
-  userName: string;
   tier: Tier;
   daysUntilExpiry: number | null;
   hoursUntilExpiry: number | null;
@@ -32,7 +31,6 @@ type Props = {
 export async function Dashboard({
   workspaceId,
   workspaceName,
-  userName,
   tier,
   daysUntilExpiry,
   hoursUntilExpiry,
@@ -47,7 +45,6 @@ export async function Dashboard({
   const data = await getDashboardData(workspaceId, range, filters);
 
   const periodSummary = formatPeriodSummary(periodKey, range);
-  const greeting = userName ? `Olá, ${userName.split(" ")[0]}` : "Olá";
   const filtersActive = hasAnyFilter(data.filters);
 
   return (
@@ -72,7 +69,7 @@ export async function Dashboard({
               {workspaceName}
             </h1>
             <p className="mt-2 text-sm text-[color:var(--muted-foreground)]">
-              {greeting}. {periodSummary}
+              {periodSummary}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-4">

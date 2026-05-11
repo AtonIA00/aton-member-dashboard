@@ -72,12 +72,6 @@ export function FilterBar({ dimensions, totalNoPeriodo }: Props) {
     return dimensions.anuncios.filter((a) => a.campanha === filters.campanha);
   }, [dimensions.anuncios, filters.campanha]);
 
-  // Cidades disponíveis dado o filtro de Estado atual (cascade).
-  const cidadesDisponiveis = useMemo(() => {
-    if (!filters.estado) return dimensions.cidades;
-    return dimensions.cidades.filter((c) => c.estado === filters.estado);
-  }, [dimensions.cidades, filters.estado]);
-
   const someActive = hasAnyFilter(filters);
 
   return (
@@ -134,41 +128,6 @@ export function FilterBar({ dimensions, totalNoPeriodo }: Props) {
           ]}
           minWidth="8.5rem"
         />
-
-        {/* Estado */}
-        {dimensions.estados.length > 0 && (
-          <Select
-            label="Estado"
-            value={filters.estado ?? ""}
-            onChange={(v) => setFilter("estado", v || undefined)}
-            options={[
-              { value: "", label: "Todos" },
-              ...dimensions.estados.map((e) => ({
-                value: e,
-                label: e === SENTINEL.ESTADO ? "Sem estado" : e,
-              })),
-            ]}
-            minWidth="7rem"
-          />
-        )}
-
-        {/* Cidade — cascateada */}
-        {dimensions.cidades.length > 0 && (
-          <Select
-            label="Cidade"
-            value={filters.cidade ?? ""}
-            onChange={(v) => setFilter("cidade", v || undefined)}
-            options={[
-              { value: "", label: "Todas" },
-              ...cidadesDisponiveis.map((c) => ({
-                value: c.nome,
-                label: c.nome === SENTINEL.CIDADE ? "Sem cidade" : c.nome,
-              })),
-            ]}
-            minWidth="9rem"
-            disabled={cidadesDisponiveis.length === 0}
-          />
-        )}
 
         {/* MQL — chips */}
         <ChipGroup

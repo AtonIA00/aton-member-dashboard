@@ -100,6 +100,18 @@ export function DailyVolumeChart({ data }: { data: DailyVolumePoint[] }) {
                 animationDuration={400}
                 animationEasing="ease-out"
               />
+              <Line
+                type="monotone"
+                dataKey="agendado_plus"
+                name="Agendado+"
+                stroke="#B388FF"
+                strokeWidth={2}
+                dot={{ r: 2.5, fill: "#B388FF" }}
+                activeDot={{ r: 5 }}
+                isAnimationActive
+                animationDuration={400}
+                animationEasing="ease-out"
+              />
             </LineChart>
           </ResponsiveContainer>
           {totalLeads > 0 && (

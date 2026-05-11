@@ -37,7 +37,6 @@ export default async function Page({
   }
 
   const workspaceName = firstString(sp.workspace_name) ?? "";
-  const userName = firstString(sp.user_name) ?? "";
 
   const access = await checkDashboardAccess(hmac.workspaceId);
   if (!access.granted) {
@@ -53,7 +52,6 @@ export default async function Page({
     <Dashboard
       workspaceId={hmac.workspaceId}
       workspaceName={workspaceName || `Workspace ${hmac.workspaceId}`}
-      userName={userName}
       tier={access.tier}
       daysUntilExpiry={access.daysUntilExpiry}
       hoursUntilExpiry={access.hoursUntilExpiry}
