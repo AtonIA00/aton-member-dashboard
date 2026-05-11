@@ -3,17 +3,16 @@ import { validateUchatSignature } from "@/lib/hmac";
 import { checkDashboardAccess } from "@/lib/access";
 import { getDashboardData } from "@/lib/leads";
 import { parsePeriodKey, resolvePeriod } from "@/lib/period";
+import { parseFilters } from "@/lib/filters";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 // Endpoint server-side com agregação completa do dashboard. Mesmo gate de
-// segurança da página principal: HMAC do iframe Uchat (anti-replay 5min) +
-// tier habilitado em wa_member_dashboard_access.
+// segurança da página principal: HMAC do iframe Uchat + tier habilitado.
 //
-// O Server Component da página / hoje chama getDashboardData() direto sem
-// passar por esta rota — mas o endpoint existe pra refresh client-side
-// futuro (M5/M6) e pra debug/testes via curl.
+// O Server Component da página / chama getDashboardData() direto. Este
+// endpoint existe pra refresh client-side futuro (M5/M6) + debug/teste.
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const params = {
@@ -38,13 +37,16 @@ export async function GET(req: NextRequest) {
   const customFrom = url.searchParams.get("from") ?? undefined;
   const customTo = url.searchParams.get("to") ?? undefined;
   const range = resolvePeriod(periodKey, customFrom, customTo);
+  const filters = parseFilters(url.searchParams);
 
   try {
-    const data = await getDashboardData(hmac.workspaceId, range);
+    const data = await getDashboardData(hmac.workspaceId, range, filters);
     return NextResponse.json(
       {
         workspace_id: data.workspaceId,
         period: { key: periodKey, range },
+        filters: data.filters,
+        dimensions: data.dimensions,
         kpis: data.kpis,
         funnel: data.funnel,
         ads_performance: data.adsPerformance,
@@ -53,12 +55,11 @@ export async function GET(req: NextRequest) {
           fetched_at: data.fetchedAt,
           fetch_ms: data.fetchMs,
           tier: access.tier,
+          total_no_periodo: data.totalNoPeriodo,
         },
       },
       {
         headers: {
-          // O cache é em memória no server — esse Cache-Control só evita
-          // que CDN/proxy faça caching agressivo errado pelo workspace.
           "Cache-Control": "private, max-age=60, must-revalidate",
         },
       },

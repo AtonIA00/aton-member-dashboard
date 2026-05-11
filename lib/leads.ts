@@ -1,11 +1,18 @@
 import "server-only";
 import { getSupabaseAdmin } from "./supabase/server";
-import { classify, type Grupo } from "./classify";
+import { classify } from "./classify";
 import type { DateRange } from "./period";
+import {
+  applyFilters,
+  computeDimensions,
+  dropInvalidFilters,
+  type Dimensions,
+  type Filters,
+} from "./filters";
 
 // Linha crua da terrace360_leads_atonhub — apenas as colunas que o dashboard
 // consome. Demais colunas (probabilidade_avanco, dia_hora_semana, cliente,
-// titulo_campanha) são ignoradas no M3 — entram em M4/M5 conforme necessário.
+// titulo_campanha) são ignoradas — não usadas até M5.
 export type LeadRow = {
   id: number;
   data: string | null; // timestamptz ISO
@@ -24,25 +31,25 @@ export type LeadRow = {
 
 export type Kpis = {
   total: number;
-  interagiram: number;        // total - Novo
-  pctInteracao: number;       // 0..1
+  interagiram: number;
+  pctInteracao: number;
   mqlSim: number;
-  mqlRate: number;            // 0..1
+  mqlRate: number;
   agendadoPlus: number;
-  pctAgendamento: number;     // 0..1 (do total)
-  anunciosAtivos: number;     // distinct id_anuncio not null
-  campanhasAtivas: number;    // distinct nome_campanha not null
+  pctAgendamento: number;
+  anunciosAtivos: number;
+  campanhasAtivas: number;
 };
 
 export type FunnelStep = { label: string; count: number; pctOfTotal: number };
 
 export type AdsPerfRow = {
   rank: number;
-  idAnuncio: string;          // "Sem ID" quando null/vazio
+  idAnuncio: string;
   agendados: number;
-  pctAgendamento: number;     // 0..1
-  pctMql: number;             // 0..1
-  pctInteracao: number;       // 0..1
+  pctAgendamento: number;
+  pctMql: number;
+  pctInteracao: number;
   total: number;
   isUnknownId: boolean;
 };
@@ -50,17 +57,23 @@ export type AdsPerfRow = {
 export type DashboardData = {
   workspaceId: string;
   range: DateRange;
+  /** Filtros efetivamente aplicados (depois de drop dos inválidos). */
+  filters: Filters;
+  /** Dimensões disponíveis no recorte do período (ANTES dos filtros). */
+  dimensions: Dimensions;
   kpis: Kpis;
   funnel: FunnelStep[];
   adsPerformance: AdsPerfRow[];
-  leads: LeadRow[];           // ordenado por data desc
-  fetchedAt: string;          // ISO timestamp da query (pra debug header)
-  fetchMs: number;            // tempo do round-trip Supabase
+  leads: LeadRow[];
+  fetchedAt: string;
+  fetchMs: number;
+  /** Quantos leads o período tem no total (ignora filtros) — útil pra UI. */
+  totalNoPeriodo: number;
 };
 
-// Cache em memória — TTL 60s por chave (workspace + período).
-// Renovado por overwrite (sem janela; última escrita ganha).
-type CacheEntry = { ts: number; data: DashboardData };
+// Cache em memória do FETCH BASE (leads do período, sem filtros). Filters
+// são aplicados sobre o resultado in-memory — zero round-trip DB extra.
+type CacheEntry = { ts: number; leads: LeadRow[]; fetchMs: number };
 const cache = new Map<string, CacheEntry>();
 const TTL_MS = 60_000;
 
@@ -68,35 +81,25 @@ function cacheKey(workspaceId: string, range: DateRange): string {
   return `${workspaceId}|${range.from ?? ""}|${range.to ?? ""}`;
 }
 
-/**
- * Lê leads do workspace + período, agrega tudo que o dashboard precisa.
- * Cache 60s memo in-memory.
- *
- * Filtragem do período no SERVIDOR via .gte/.lte no campo `data`.
- * 1816 linhas (workspace mais pesado) chegam em ~200KB de JSON — toleráveis.
- */
-export async function getDashboardData(
+async function fetchBaseLeads(
   workspaceId: string,
   range: DateRange,
-): Promise<DashboardData> {
+): Promise<{ leads: LeadRow[]; fetchMs: number; fromCache: boolean }> {
   const key = cacheKey(workspaceId, range);
   const now = Date.now();
   const hit = cache.get(key);
   if (hit && now - hit.ts < TTL_MS) {
-    return hit.data;
+    return { leads: hit.leads, fetchMs: hit.fetchMs, fromCache: true };
   }
 
   const supabase = getSupabaseAdmin();
   const t0 = Date.now();
 
-  // PostgREST do Supabase (REST API) tem hard cap em `db-max-rows` (1000
-  // por default em projetos Aton). `.range(0, 4999)` é IGNORADO acima
-  // desse cap. Solução robusta: paginar do client em chunks de 1000.
-  //
-  // Cleide tem ~1816 leads → 2 round-trips. Aceita a latência: cada chunk
-  // é ~50-150ms, total fica abaixo de 500ms typical. Cache 60s amortiza.
+  // PostgREST do Supabase tem hard cap em `db-max-rows` (1000 por default).
+  // Solução: paginar do client em chunks de 1000 — Cleide (1818) → 2 round-trips.
+  // Documentado no FRAMEWORK.md §4.
   const PAGE = 1000;
-  const HARD_CAP = 10_000; // sanity bound — pára se workspace ficar absurdo
+  const HARD_CAP = 10_000;
   let allLeads: LeadRow[] = [];
   let offset = 0;
 
@@ -123,43 +126,64 @@ export async function getDashboardData(
       });
       throw new Error("Falha ao buscar leads do workspace");
     }
-
     const chunk = (data ?? []) as LeadRow[];
     allLeads = allLeads.concat(chunk);
-    if (chunk.length < PAGE) break; // última página
+    if (chunk.length < PAGE) break;
     offset += PAGE;
   }
 
   const fetchMs = Date.now() - t0;
-  const leads = allLeads;
+  cache.set(key, { ts: now, leads: allLeads, fetchMs });
 
-  const dashboard: DashboardData = {
-    workspaceId,
-    range,
-    kpis: computeKpis(leads),
-    funnel: computeFunnel(leads),
-    adsPerformance: computeAdsPerformance(leads),
-    leads,
-    fetchedAt: new Date().toISOString(),
-    fetchMs,
-  };
-
-  cache.set(key, { ts: now, data: dashboard });
-
-  // Garbage collection oportunista — evita o Map crescer indefinidamente
-  // (cada chave é workspace+período, há combinações possíveis mas finitas).
+  // GC oportunista — evita Map crescer indefinidamente.
   if (cache.size > 200) {
     for (const [k, v] of cache) {
       if (now - v.ts >= TTL_MS) cache.delete(k);
     }
   }
 
-  return dashboard;
+  return { leads: allLeads, fetchMs, fromCache: false };
+}
+
+/**
+ * Agrega o dashboard do workspace pro recorte (período + filtros opcionais).
+ *
+ * Ordem da computação:
+ * 1. Fetch base (cacheado por workspace+período).
+ * 2. computeDimensions(base) — dropdowns refletem o que existe no período,
+ *    NÃO o que sobra depois dos filtros.
+ * 3. dropInvalidFilters(filters, dimensions) — silenciosamente remove
+ *    filtros cujo valor não existe.
+ * 4. applyFilters(base, filters) — leads do recorte filtrado.
+ * 5. KPIs / Funil / Ads / Tabela computados sobre o subset filtrado.
+ */
+export async function getDashboardData(
+  workspaceId: string,
+  range: DateRange,
+  filtersIn: Filters = {},
+): Promise<DashboardData> {
+  const { leads: base, fetchMs } = await fetchBaseLeads(workspaceId, range);
+  const dimensions = computeDimensions(base);
+  const filters = dropInvalidFilters(filtersIn, dimensions, workspaceId);
+  const filtered = applyFilters(base, filters);
+
+  return {
+    workspaceId,
+    range,
+    filters,
+    dimensions,
+    kpis: computeKpis(filtered),
+    funnel: computeFunnel(filtered),
+    adsPerformance: computeAdsPerformance(filtered),
+    leads: filtered,
+    fetchedAt: new Date().toISOString(),
+    fetchMs,
+    totalNoPeriodo: base.length,
+  };
 }
 
 export function computeKpis(leads: LeadRow[]): Kpis {
   const total = leads.length;
-
   let novos = 0;
   let mqlSim = 0;
   let agendadoPlus = 0;
@@ -203,7 +227,6 @@ export function computeFunnel(leads: LeadRow[]): FunnelStep[] {
     if ((l.mql ?? "").toLowerCase().trim() === "sim") mqlSim++;
   }
   const interagiram = total - novos;
-
   const pct = (n: number) => (total > 0 ? n / total : 0);
 
   return [
@@ -246,7 +269,7 @@ export function computeAdsPerformance(leads: LeadRow[]): AdsPerfRow[] {
     const interagiram = b.total - b.novos;
     const safeDiv = (a: number, c: number) => (c > 0 ? a / c : 0);
     rows.push({
-      rank: 0, // preenchido depois
+      rank: 0,
       idAnuncio: b.idAnuncio,
       agendados: b.agendados,
       pctAgendamento: safeDiv(b.agendados, b.total),
@@ -257,19 +280,15 @@ export function computeAdsPerformance(leads: LeadRow[]): AdsPerfRow[] {
     });
   }
 
-  // Ordenação: Sem ID no topo, depois por total desc.
   rows.sort((a, b) => {
     if (a.isUnknownId && !b.isUnknownId) return -1;
     if (!a.isUnknownId && b.isUnknownId) return 1;
     return b.total - a.total;
   });
 
-  // Rank: começa em 1 nas linhas "com ID" (Sem ID fica como —).
   let nextRank = 1;
   for (const r of rows) {
-    if (!r.isUnknownId) {
-      r.rank = nextRank++;
-    }
+    if (!r.isUnknownId) r.rank = nextRank++;
   }
 
   return rows;

@@ -1,11 +1,11 @@
 import { checkDashboardAccess } from "@/lib/access";
 import { validateUchatSignature } from "@/lib/hmac";
 import { parsePeriodKey } from "@/lib/period";
+import { parseFilters } from "@/lib/filters";
 import { InvalidAccess } from "@/components/InvalidAccess";
 import { UpsellScreen } from "@/components/UpsellScreen";
 import { Dashboard } from "@/components/dashboard/Dashboard";
 
-// Renderização dinâmica obrigatória — a página depende de searchParams + DB.
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -47,6 +47,7 @@ export default async function Page({
   const periodKey = parsePeriodKey(firstString(sp.period));
   const customFrom = firstString(sp.from);
   const customTo = firstString(sp.to);
+  const filters = parseFilters(sp);
 
   return (
     <Dashboard
@@ -58,6 +59,7 @@ export default async function Page({
       periodKey={periodKey}
       customFrom={customFrom}
       customTo={customTo}
+      filters={filters}
     />
   );
 }

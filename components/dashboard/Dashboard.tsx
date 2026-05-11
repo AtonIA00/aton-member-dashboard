@@ -1,5 +1,6 @@
 import { getDashboardData } from "@/lib/leads";
 import { PERIOD_LABEL, parsePeriodKey, resolvePeriod, type PeriodKey } from "@/lib/period";
+import { hasAnyFilter, type Filters } from "@/lib/filters";
 import type { Tier } from "@/lib/access";
 import { KpiRow } from "./KpiRow";
 import { Funnel } from "./Funnel";
@@ -7,6 +8,7 @@ import { AdsPerformanceTable } from "./AdsPerformanceTable";
 import { LeadsTable } from "./LeadsTable";
 import { PeriodPicker } from "./PeriodPicker";
 import { TierBadge } from "./TierBadge";
+import { FilterBar } from "./FilterBar";
 
 type Props = {
   workspaceId: string;
@@ -17,6 +19,7 @@ type Props = {
   periodKey: PeriodKey;
   customFrom?: string;
   customTo?: string;
+  filters: Filters;
 };
 
 export async function Dashboard({
@@ -28,12 +31,14 @@ export async function Dashboard({
   periodKey,
   customFrom,
   customTo,
+  filters,
 }: Props) {
   const range = resolvePeriod(periodKey, customFrom, customTo);
-  const data = await getDashboardData(workspaceId, range);
+  const data = await getDashboardData(workspaceId, range, filters);
 
   const periodSummary = formatPeriodSummary(periodKey, range);
   const greeting = userName ? `Olá, ${userName.split(" ")[0]}` : "Olá";
+  const filtersActive = hasAnyFilter(data.filters);
 
   return (
     <main className="relative min-h-screen overflow-hidden">
@@ -66,26 +71,35 @@ export async function Dashboard({
           </div>
         </header>
 
+        {/* FilterBar — só aparece se tem leads no período */}
+        <FilterBar dimensions={data.dimensions} totalNoPeriodo={data.totalNoPeriodo} />
+
         {/* KPIs */}
-        <div className="mt-8">
+        <div className="mt-6">
           <KpiRow kpis={data.kpis} />
         </div>
 
-        {data.kpis.total === 0 ? (
-          <EmptyState />
+        {data.totalNoPeriodo === 0 ? (
+          // Caso A: período sem nenhum lead.
+          <EmptyState
+            title="Sem leads no período selecionado"
+            body="Quando o agente capturar leads pela campanha, eles aparecem aqui. Tente ampliar o período no dropdown acima."
+          />
+        ) : data.kpis.total === 0 && filtersActive ? (
+          // Caso B: período tem leads, mas filtros zeraram.
+          <EmptyState
+            title="Nenhum lead com esses filtros"
+            body={`Você tem ${data.totalNoPeriodo.toLocaleString("pt-BR")} ${data.totalNoPeriodo === 1 ? "lead" : "leads"} no período. Limpe os filtros ou ajuste-os pra ver resultados.`}
+            highlightActions
+          />
         ) : (
           <>
-            {/* Funnel */}
             <div className="mt-8">
               <Funnel steps={data.funnel} />
             </div>
-
-            {/* Ads performance */}
             <div className="mt-8">
               <AdsPerformanceTable rows={data.adsPerformance} />
             </div>
-
-            {/* Detailed leads */}
             <div className="mt-8">
               <LeadsTable leads={data.leads} />
             </div>
@@ -95,25 +109,46 @@ export async function Dashboard({
         <div className="mt-auto pt-10 text-center text-[11px] text-[color:var(--muted-foreground)]">
           <span className="font-mono">member-dashboard.aton-ia.com.br</span>
           <span className="mx-2 opacity-50">·</span>
-          <span>Marco 3 — Dashboard read-only</span>
+          <span>Marco 4 — Filtros avançados</span>
           <span className="mx-2 opacity-50">·</span>
           <span className="tabular-nums">fetch {data.fetchMs}ms</span>
+          {filtersActive && (
+            <>
+              <span className="mx-2 opacity-50">·</span>
+              <span className="tabular-nums">
+                {data.kpis.total.toLocaleString("pt-BR")} de{" "}
+                {data.totalNoPeriodo.toLocaleString("pt-BR")} leads após filtros
+              </span>
+            </>
+          )}
         </div>
       </div>
     </main>
   );
 }
 
-function EmptyState() {
+function EmptyState({
+  title,
+  body,
+  highlightActions,
+}: {
+  title: string;
+  body: string;
+  highlightActions?: boolean;
+}) {
   return (
-    <div className="mt-12 rounded-[var(--radius-lg)] border border-dashed border-[color:var(--border)] bg-[color:var(--card)]/40 p-12 text-center backdrop-blur">
+    <div
+      className={
+        "mt-10 rounded-[var(--radius-lg)] border border-dashed p-12 text-center backdrop-blur " +
+        (highlightActions
+          ? "border-[color:var(--primary)]/40 bg-[color:var(--primary)]/5"
+          : "border-[color:var(--border)] bg-[color:var(--card)]/40")
+      }
+    >
       <div className="font-[family-name:var(--font-montserrat)] text-base font-semibold text-[color:var(--foreground)]">
-        Sem leads no período selecionado
+        {title}
       </div>
-      <p className="mx-auto mt-2 max-w-md text-sm text-[color:var(--muted-foreground)]">
-        Quando o agente capturar leads pela campanha, eles aparecem aqui. Tente
-        ampliar o período no dropdown acima.
-      </p>
+      <p className="mx-auto mt-2 max-w-md text-sm text-[color:var(--muted-foreground)]">{body}</p>
     </div>
   );
 }
