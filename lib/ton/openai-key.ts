@@ -51,13 +51,22 @@ export async function getOpenAIKeyForWorkspace(workspaceId: string): Promise<str
 
   // Caminho real: chama o endpoint do Aton Core.
   try {
+    const bodyStr = JSON.stringify({ workspace_id: workspaceId });
+    // TEMP DEBUG: log do que estamos enviando pra correlacionar com o erro
+    // workspace_id_required do Core. Remover quando estabilizado.
+    console.warn("[ton/openai-key][debug request]", {
+      url: `${coreUrl}/api/internal/openai-key`,
+      bodyLen: bodyStr.length,
+      bodyPreview: bodyStr,
+    });
     const res = await fetch(`${coreUrl}/api/internal/openai-key`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Content-Length": String(Buffer.byteLength(bodyStr)),
         Authorization: `Bearer ${sharedSecret}`,
       },
-      body: JSON.stringify({ workspace_id: workspaceId }),
+      body: bodyStr,
       // Não cacheia no Next fetch — gerenciamos via Map TTL acima.
       cache: "no-store",
     });
