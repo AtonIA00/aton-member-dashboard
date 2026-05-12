@@ -82,6 +82,12 @@ export function TonChat({ hmac }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [sessionTokens, setSessionTokens] = useState({ in: 0, out: 0 });
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Quando o stream cria uma thread NOVA, atualizamos activeThreadId localmente
+  // pra preservar as messages do stream em andamento. O useEffect que carrega
+  // histórico do servidor DEVE PULAR esse caso (servidor ainda não tem a
+  // resposta final salva → carregaria histórico parcial e clobberaria
+  // o array local). Ref permite ao effect ler o estado sem dependency.
+  const skipNextLoadRef = useRef(false);
 
   const hmacQS = useMemo(() => {
     const p = new URLSearchParams();
@@ -120,6 +126,13 @@ export function TonChat({ hmac }: Props) {
   useEffect(() => {
     if (!activeThreadId) {
       setMessages([]);
+      return;
+    }
+    // Pula o reload quando o próprio stream acabou de criar essa thread:
+    // o servidor ainda não persistiu a resposta final → o histórico voltaria
+    // parcial e clobberaria o array que está sendo construído via SSE.
+    if (skipNextLoadRef.current) {
+      skipNextLoadRef.current = false;
       return;
     }
     let cancelled = false;
@@ -251,6 +264,10 @@ export function TonChat({ hmac }: Props) {
           if (event === "thread") {
             newThreadId = (payload.thread_id as string) ?? null;
             if (newThreadId && !activeThreadId) {
+              // Sinaliza ao effect de reload pra ignorar essa transição:
+              // o stream segue alimentando as messages locais; o servidor
+              // só persiste a resposta final no evento "done".
+              skipNextLoadRef.current = true;
               setActiveThreadId(newThreadId);
               // Atualiza URL pra refletir a thread nova.
               const params = new URLSearchParams(sp.toString());
