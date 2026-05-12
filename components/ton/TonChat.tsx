@@ -98,12 +98,15 @@ export function TonChat({ hmac }: Props) {
     return p.toString();
   }, [hmac]);
 
-  // Atualiza activeThreadId quando URL muda externamente.
+  // Sync UNIDIRECIONAL URL → state, pra cobrir back/forward do browser e
+  // deep-linking. NÃO incluir activeThreadId nas deps: quando o stream
+  // cria thread nova e chama setActiveThreadId(NEW) inline ANTES do
+  // router.replace propagar pro sp, o effect rodaria com threadIdFromUrl
+  // ainda null e reverteria o state pra null — clobberando o stream.
   useEffect(() => {
-    if (threadIdFromUrl !== activeThreadId) {
-      setActiveThreadId(threadIdFromUrl);
-    }
-  }, [threadIdFromUrl, activeThreadId]);
+    setActiveThreadId(threadIdFromUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadIdFromUrl]);
 
   // Carrega lista de threads + quota.
   const refreshThreads = useCallback(async () => {
