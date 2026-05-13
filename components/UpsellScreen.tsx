@@ -1,3 +1,5 @@
+import { AtonLogo } from "./brand/AtonLogo";
+
 type Props = {
   workspaceName?: string;
 };
@@ -20,22 +22,26 @@ export function UpsellScreen({ workspaceName }: Props) {
     <main className="relative min-h-screen overflow-hidden">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-60"
+        className="pointer-events-none absolute inset-0 opacity-70"
         style={{
           background:
-            "radial-gradient(50% 40% at 30% 0%, rgba(0, 229, 255, 0.18) 0%, rgba(0, 229, 255, 0) 70%)",
+            "radial-gradient(50% 40% at 30% 0%, rgba(0, 87, 255, 0.16) 0%, rgba(0, 87, 255, 0) 70%)",
         }}
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-40"
+        className="pointer-events-none absolute inset-0 opacity-50"
         style={{
           background:
-            "radial-gradient(40% 40% at 80% 100%, rgba(105, 240, 174, 0.10) 0%, rgba(105, 240, 174, 0) 70%)",
+            "radial-gradient(40% 40% at 80% 100%, rgba(0, 194, 255, 0.10) 0%, rgba(0, 194, 255, 0) 70%)",
         }}
       />
 
       <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col justify-center px-8 py-16 lg:px-12">
+        {/* Wordmark no topo da tela de upsell */}
+        <div className="mb-10">
+          <AtonLogo height={22} />
+        </div>
         <div className="grid items-center gap-12 lg:grid-cols-[1.1fr_1fr] lg:gap-16">
           {/* Coluna esquerda — pitch */}
           <div>
@@ -60,7 +66,7 @@ export function UpsellScreen({ workspaceName }: Props) {
 
             <h1 className="font-[family-name:var(--font-montserrat)] text-4xl font-extrabold leading-[1.05] tracking-tight text-[color:var(--foreground)] sm:text-5xl lg:text-6xl">
               Desbloqueie o seu{" "}
-              <span className="bg-gradient-to-r from-[color:var(--primary)] to-[#69F0AE] bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-[color:var(--primary)] to-[#00c2ff] bg-clip-text text-transparent">
                 Dashboard de BI
               </span>
             </h1>
@@ -75,7 +81,7 @@ export function UpsellScreen({ workspaceName }: Props) {
                 href={WHATSAPP_CTA}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[color:var(--primary)] px-7 py-3.5 font-[family-name:var(--font-montserrat)] text-sm font-bold tracking-wide text-[color:var(--primary-foreground)] shadow-[0_8px_30px_rgba(0,229,255,0.25)] transition-transform hover:scale-[1.02] active:scale-[0.99]"
+                className="inline-flex items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[color:var(--primary)] px-7 py-3.5 font-[family-name:var(--font-montserrat)] text-sm font-bold tracking-wide text-[color:var(--primary-foreground)] shadow-[0_8px_30px_rgba(0,87,255,0.30)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--aton-blue-mid)] hover:shadow-[0_12px_36px_rgba(0,87,255,0.40)] active:translate-y-0"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"

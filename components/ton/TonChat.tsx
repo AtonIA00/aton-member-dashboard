@@ -378,7 +378,7 @@ export function TonChat({ hmac }: Props) {
                       "w-full truncate rounded-[var(--radius-md)] px-3 py-2 text-left text-xs transition-colors " +
                       (t.id === activeThreadId
                         ? "bg-[color:var(--primary)]/15 text-[color:var(--foreground)]"
-                        : "text-[color:var(--muted-foreground)] hover:bg-white/[0.04] hover:text-[color:var(--foreground)]")
+                        : "text-[color:var(--muted-foreground)] hover:bg-[color:var(--surface-2)] hover:text-[color:var(--foreground)]")
                     }
                     title={t.title ?? "Nova conversa"}
                   >
@@ -401,7 +401,7 @@ export function TonChat({ hmac }: Props) {
               {int(quota.tokensToday)} tokens hoje
             </div>
             {quota.level === "warn" && (
-              <div className="mt-1 text-[10px] text-[#FFD740]">
+              <div className="mt-1 text-[10px] text-amber-700 dark:text-[#FFD740]">
                 Uso alto — considere encerrar threads antigas.
               </div>
             )}
@@ -412,7 +412,7 @@ export function TonChat({ hmac }: Props) {
       {/* Chat panel */}
       <div className="flex flex-col rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color:var(--card)]/60 backdrop-blur">
         {quota?.level === "warn" && (
-          <div className="rounded-t-[var(--radius-lg)] border-b border-[#FFD740]/30 bg-[#FFD740]/8 px-4 py-2 text-[11px] text-[#FFD740]">
+          <div className="rounded-t-[var(--radius-lg)] border-b border-amber-500/30 bg-amber-100 px-4 py-2 text-[11px] text-amber-700 dark:border-[#FFD740]/30 dark:bg-[#FFD740]/8 dark:text-[#FFD740]">
             Você está usando muitos tokens hoje. Considere fechar threads antigas.
           </div>
         )}
@@ -484,14 +484,14 @@ function MessageBubble({ message }: { message: Message }) {
   if (message.role === "tool") {
     return (
       <li>
-        <details className="rounded-md border border-[color:var(--border)] bg-white/[0.02] px-3 py-1.5 text-[11px] text-[color:var(--muted-foreground)]">
+        <details className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)]/40 px-3 py-1.5 text-[11px] text-[color:var(--muted-foreground)]">
           <summary className="cursor-pointer select-none">
             <span className="mr-1.5">📊</span>
             Consultando <code className="text-[color:var(--primary)]">{message.toolName}</code>
             {message.toolResult ? " · pronto" : "…"}
           </summary>
           {message.toolResult && (
-            <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded bg-black/30 p-2 text-[10px]">
+            <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded bg-[color:var(--surface-2)] p-2 text-[10px] text-[color:var(--foreground)]/80">
               {message.toolResult}
             </pre>
           )}

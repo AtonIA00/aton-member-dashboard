@@ -261,9 +261,9 @@ function ChipGroup<T extends string>({
                 }
               : active
               ? {
-                  backgroundColor: "rgba(0, 229, 255, 0.12)",
+                  backgroundColor: "rgba(0, 87, 255, 0.10)",
                   color: "var(--primary)",
-                  borderColor: "rgba(0, 229, 255, 0.45)",
+                  borderColor: "rgba(0, 87, 255, 0.40)",
                 }
               : undefined;
           return (

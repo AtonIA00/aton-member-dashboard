@@ -1,12 +1,14 @@
+import { AtonLogo } from "./brand/AtonLogo";
+
 export function InvalidAccess() {
   return (
     <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-16">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-50"
+        className="pointer-events-none absolute inset-0 opacity-60"
         style={{
           background:
-            "radial-gradient(60% 50% at 50% 0%, rgba(255, 82, 82, 0.10) 0%, rgba(255, 82, 82, 0) 70%)",
+            "radial-gradient(60% 50% at 50% 0%, rgba(220, 38, 38, 0.10) 0%, rgba(220, 38, 38, 0) 70%)",
         }}
       />
 
@@ -49,7 +51,8 @@ export function InvalidAccess() {
           .
         </p>
 
-        <div className="mt-12 text-xs text-[color:var(--muted-foreground)]">
+        <div className="mt-12 flex flex-col items-center gap-2 text-xs text-[color:var(--muted-foreground)]">
+          <AtonLogo height={16} />
           <span className="font-mono">member-dashboard.aton-ia.com.br</span>
         </div>
       </div>

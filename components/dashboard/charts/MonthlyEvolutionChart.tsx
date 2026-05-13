@@ -14,12 +14,13 @@ import type { MonthlyEvolutionPoint } from "@/lib/charts";
 import { ChartCard } from "./ChartCard";
 import { EmptyChart } from "./EmptyChart";
 import { AtonTooltip } from "./tooltip";
+import { CHART_AXIS, CHART_COLORS } from "@/lib/chart-palette";
 
 const HEIGHT = 320;
 
 const AXIS_STYLE = {
   fontSize: 11,
-  fill: "#8899AA",
+  fill: CHART_AXIS.text,
   fontFamily: "var(--font-geist-sans)",
 };
 
@@ -51,12 +52,12 @@ export function MonthlyEvolutionChart({ data }: { data: MonthlyEvolutionPoint[] 
             data={data}
             margin={{ top: 8, right: 8, bottom: 0, left: -20 }}
           >
-            <CartesianGrid stroke="rgba(0,229,255,0.06)" vertical={false} />
+            <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} />
             <XAxis
               dataKey="label"
               tick={AXIS_STYLE}
               tickLine={false}
-              axisLine={{ stroke: "rgba(0,229,255,0.10)" }}
+              axisLine={{ stroke: CHART_AXIS.axis }}
               minTickGap={8}
             />
             {/* Eixo esquerdo: counts */}
@@ -64,7 +65,7 @@ export function MonthlyEvolutionChart({ data }: { data: MonthlyEvolutionPoint[] 
               yAxisId="left"
               tick={AXIS_STYLE}
               tickLine={false}
-              axisLine={{ stroke: "rgba(0,229,255,0.10)" }}
+              axisLine={{ stroke: CHART_AXIS.axis }}
               allowDecimals={false}
               width={42}
             />
@@ -74,14 +75,14 @@ export function MonthlyEvolutionChart({ data }: { data: MonthlyEvolutionPoint[] 
               orientation="right"
               tick={AXIS_STYLE}
               tickLine={false}
-              axisLine={{ stroke: "rgba(0,229,255,0.10)" }}
+              axisLine={{ stroke: CHART_AXIS.axis }}
               tickFormatter={(v) => `${v}%`}
               domain={[0, 100]}
               width={42}
             />
             <Tooltip
               content={<AtonTooltip />}
-              cursor={{ stroke: "rgba(0,229,255,0.18)", strokeWidth: 1 }}
+              cursor={{ stroke: CHART_AXIS.cursor, strokeWidth: 1 }}
             />
             <Legend
               wrapperStyle={{ fontSize: 11, paddingTop: 6 }}
@@ -93,9 +94,9 @@ export function MonthlyEvolutionChart({ data }: { data: MonthlyEvolutionPoint[] 
               type="monotone"
               dataKey="total"
               name="Total"
-              stroke="#00E5FF"
+              stroke={CHART_COLORS.primary}
               strokeWidth={2}
-              dot={{ r: 3, fill: "#00E5FF" }}
+              dot={{ r: 3, fill: CHART_COLORS.primary }}
               activeDot={{ r: 5 }}
               isAnimationActive
               animationDuration={400}
@@ -106,9 +107,9 @@ export function MonthlyEvolutionChart({ data }: { data: MonthlyEvolutionPoint[] 
               type="monotone"
               dataKey="mqlSim"
               name="MQL Sim"
-              stroke="#69F0AE"
+              stroke={CHART_COLORS.success}
               strokeWidth={2}
-              dot={{ r: 3, fill: "#69F0AE" }}
+              dot={{ r: 3, fill: CHART_COLORS.success }}
               activeDot={{ r: 5 }}
               isAnimationActive
               animationDuration={400}
@@ -119,9 +120,9 @@ export function MonthlyEvolutionChart({ data }: { data: MonthlyEvolutionPoint[] 
               type="monotone"
               dataKey="agendado"
               name="Agendamento+"
-              stroke="#FFD740"
+              stroke={CHART_COLORS.secondary}
               strokeWidth={2}
-              dot={{ r: 3, fill: "#FFD740" }}
+              dot={{ r: 3, fill: CHART_COLORS.secondary }}
               activeDot={{ r: 5 }}
               isAnimationActive
               animationDuration={400}
@@ -132,10 +133,10 @@ export function MonthlyEvolutionChart({ data }: { data: MonthlyEvolutionPoint[] 
               type="monotone"
               dataKey="interacao"
               name="% Interação"
-              stroke="#B388FF"
+              stroke={CHART_COLORS.warning}
               strokeWidth={2}
               strokeDasharray="5 5"
-              dot={{ r: 3, fill: "#B388FF" }}
+              dot={{ r: 3, fill: CHART_COLORS.warning }}
               activeDot={{ r: 5 }}
               isAnimationActive
               animationDuration={400}

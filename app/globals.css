@@ -1,75 +1,97 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
+/* Tailwind v4 — gatilho `dark:` responde a [data-theme="dark"] no <html>.
+   Prefere data-attribute em vez de class .dark pra evitar conflito com
+   eventual CSS legado e pra ler/setar via document.documentElement
+   .setAttribute("data-theme", ...) idiomático em React.
+
+   prefers-color-scheme DELIBERADAMENTE ignorado — o usuário escolhe e
+   a preferência vive no DB. Auto-detecção quebraria o toggle. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 :root {
-  --background: #0A1628;
-  --foreground: #E8EDF2;
-  --card: #0F1D32;
-  --card-foreground: #E8EDF2;
-  --popover: #0F1D32;
-  --popover-foreground: #E8EDF2;
-  --primary: #00E5FF;
-  --primary-foreground: #0A1628;
-  --secondary: #1A2942;
-  --secondary-foreground: #E8EDF2;
-  --muted: #0F1D32;
-  --muted-foreground: #8899AA;
-  --accent: #1A2942;
-  --accent-foreground: #E8EDF2;
-  --destructive: #FF5252;
-  --border: rgb(232 237 242 / 10%);
-  --input: rgb(232 237 242 / 15%);
-  --ring: #00E5FF;
-  --chart-1: #00E5FF;
-  --chart-2: #69F0AE;
-  --chart-3: #FFD740;
-  --chart-4: #FF5252;
-  --chart-5: #8899AA;
-  --sidebar: #0F1D32;
-  --sidebar-foreground: #E8EDF2;
-  --sidebar-primary: #00E5FF;
-  --sidebar-primary-foreground: #0A1628;
-  --sidebar-accent: #1A2942;
-  --sidebar-accent-foreground: #E8EDF2;
-  --sidebar-border: rgb(232 237 242 / 10%);
-  --sidebar-ring: #00E5FF;
-  --radius: 0.625rem;
+  /* === Brand tokens — invariantes light/dark === */
+  --aton-blue:       #0057ff;
+  --aton-blue-deep:  #003cff;
+  --aton-blue-mid:   #006bff;
+  --aton-blue-cyan:  #00c2ff;
+
+  /* === LIGHT MODE (default — paper first) === */
+  --background:         #fbfcfd;
+  --foreground:         #0b1220;
+  --card:               #ffffff;
+  --card-foreground:    #0b1220;
+  --popover:            #ffffff;
+  --popover-foreground: #0b1220;
+  --surface:            #ffffff;
+  --surface-2:          #f6f7f9;
+  --primary:            #0057ff;
+  --primary-foreground: #ffffff;
+  --secondary:          #006bff;
+  --secondary-foreground:#ffffff;
+  --muted:              #f6f7f9;
+  --muted-foreground:   #6b7280;
+  --accent:             #f6f7f9;
+  --accent-foreground:  #0b1220;
+  --destructive:        #dc2626;
+  --warning:            #f59e0b;
+  --success:            #10b981;
+  --border:             rgba(17, 24, 39, 0.09);
+  --input:              rgba(17, 24, 39, 0.14);
+  --ring:               #0057ff;
+
+  /* Charts — paleta Aton com diferenciação por série.
+     Aplicada nos Recharts via lib/chart-palette.ts */
+  --chart-1: #0057ff;  /* aton-blue (série principal) */
+  --chart-2: #00c2ff;  /* aton-blue-cyan (secundária) */
+  --chart-3: #003cff;  /* aton-blue-deep (terciária) */
+  --chart-4: #10b981;  /* success */
+  --chart-5: #f59e0b;  /* warning */
+
+  --sidebar:            #ffffff;
+  --sidebar-foreground: #0b1220;
+  --sidebar-primary:    #0057ff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent:     #f6f7f9;
+  --sidebar-accent-foreground:  #0b1220;
+  --sidebar-border:     rgba(17, 24, 39, 0.09);
+  --sidebar-ring:       #0057ff;
+
+  --radius: 0.75rem;
+
+  --scrollbar-track:       #f6f7f9;
+  --scrollbar-thumb:       #d1d5db;
+  --scrollbar-thumb-hover: #9ca3af;
 }
 
-.dark {
-  --background: #0A1628;
-  --foreground: #E8EDF2;
-  --card: #0F1D32;
-  --card-foreground: #E8EDF2;
-  --popover: #0F1D32;
-  --popover-foreground: #E8EDF2;
-  --primary: #00E5FF;
-  --primary-foreground: #0A1628;
-  --secondary: #1A2942;
-  --secondary-foreground: #E8EDF2;
-  --muted: #0F1D32;
-  --muted-foreground: #8899AA;
-  --accent: #1A2942;
-  --accent-foreground: #E8EDF2;
-  --destructive: #FF5252;
-  --border: rgb(232 237 242 / 10%);
-  --input: rgb(232 237 242 / 15%);
-  --ring: #00E5FF;
-  --chart-1: #00E5FF;
-  --chart-2: #69F0AE;
-  --chart-3: #FFD740;
-  --chart-4: #FF5252;
-  --chart-5: #8899AA;
-  --sidebar: #0F1D32;
-  --sidebar-foreground: #E8EDF2;
-  --sidebar-primary: #00E5FF;
-  --sidebar-primary-foreground: #0A1628;
-  --sidebar-accent: #1A2942;
-  --sidebar-accent-foreground: #E8EDF2;
-  --sidebar-border: rgb(232 237 242 / 10%);
-  --sidebar-ring: #00E5FF;
+/* === DARK MODE (override) === */
+[data-theme="dark"] {
+  --background:         #060c18;
+  --foreground:         #f4f6fb;
+  --card:               #0b1220;
+  --card-foreground:    #f4f6fb;
+  --popover:            #0b1220;
+  --popover-foreground: #f4f6fb;
+  --surface:            #0b1220;
+  --surface-2:          #111a30;
+  --muted:              #111a30;
+  --muted-foreground:   #6a89b0;
+  --accent:             #111a30;
+  --accent-foreground:  #f4f6fb;
+  --destructive:        #ef4444;
+  --border:             rgba(255, 255, 255, 0.08);
+  --input:              rgba(255, 255, 255, 0.12);
+
+  --sidebar:            #0b1220;
+  --sidebar-foreground: #f4f6fb;
+  --sidebar-accent:     #111a30;
+  --sidebar-accent-foreground:  #f4f6fb;
+  --sidebar-border:     rgba(255, 255, 255, 0.08);
+
+  --scrollbar-track:       #0b1220;
+  --scrollbar-thumb:       #1f2a44;
+  --scrollbar-thumb-hover: #2d3a5a;
 }
 
 @theme inline {
@@ -115,6 +137,12 @@
   --font-heading: var(--font-montserrat);
 }
 
+/* Transição suave no toggle entre temas. Não anima children
+   individualmente — só bg/cor do <html>/<body> pra evitar lag. */
+html {
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
 @layer base {
   * {
     border-color: var(--border);
@@ -134,13 +162,5 @@
     background-color: var(--card);
     color: var(--foreground);
   }
-  option {
-    background-color: #0F1D32;
-    color: #E8EDF2;
-  }
-  option:hover,
-  option:checked {
-    background-color: #1A2942;
-    color: #00E5FF;
-  }
+  /* option styling segue o tema via tokens (não mais hardcoded). */
 }

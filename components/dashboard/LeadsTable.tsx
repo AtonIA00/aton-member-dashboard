@@ -30,7 +30,8 @@ function fmtMql(mql: string | null): { label: string; cls: string } {
   if (v === "sim") {
     return {
       label: "Sim",
-      cls: "border-[#69F0AE]/40 bg-[#69F0AE]/10 text-[#69F0AE]",
+      // emerald-700 em light pra contraste; -300 em dark mantém o look antigo.
+      cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
     };
   }
   if (v === "não" || v === "nao") {
@@ -41,7 +42,7 @@ function fmtMql(mql: string | null): { label: string; cls: string } {
   }
   return {
     label: "—",
-    cls: "border-[color:var(--muted-foreground)]/30 bg-white/[0.03] text-[color:var(--muted-foreground)]",
+    cls: "border-[color:var(--muted-foreground)]/30 bg-[color:var(--surface-2)]/60 text-[color:var(--muted-foreground)]",
   };
 }
 
@@ -110,7 +111,7 @@ export function LeadsTable({ leads }: Props) {
               return (
                 <tr
                   key={l.id}
-                  className="border-t border-white/[0.03] align-top transition-colors hover:bg-[color:var(--primary)]/5"
+                  className="border-t border-[color:var(--border)]/60 align-top transition-colors hover:bg-[color:var(--primary)]/5"
                 >
                   <td className="whitespace-nowrap px-4 py-3 text-xs text-[color:var(--muted-foreground)] tabular-nums">
                     {fmtDate(l.data)}

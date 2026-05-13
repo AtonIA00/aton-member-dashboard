@@ -18,6 +18,8 @@ import { MonthlyEvolutionChart } from "./charts/MonthlyEvolutionChart";
 import { TabSwitcher } from "./TabSwitcher";
 import type { TabKey } from "@/lib/tabs";
 import { TonView } from "@/components/ton/TonView";
+import { AtonLogo } from "@/components/brand/AtonLogo";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 type HmacParams = {
   workspace_id: string;
@@ -83,8 +85,11 @@ export async function Dashboard({
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-50"
         style={{
+          // Halo sutil em aton-blue. Mantém o brilho de identidade em ambos
+          // os temas (em light vira um leve azulado no topo; em dark
+          // continua etéreo).
           background:
-            "radial-gradient(50% 40% at 30% 0%, rgba(0, 229, 255, 0.14) 0%, rgba(0, 229, 255, 0) 70%)",
+            "radial-gradient(50% 40% at 30% 0%, rgba(0, 87, 255, 0.12) 0%, rgba(0, 87, 255, 0) 70%)",
         }}
       />
 
@@ -92,14 +97,19 @@ export async function Dashboard({
         {/* Header */}
         <header className="flex flex-col gap-5 border-b border-[color:var(--border)] pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
-            <div className="text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted-foreground)]">
-              Aton · Member Dashboard
+            {/* Wordmark + sub-label "Member Dashboard". Substitui o textual
+                "Aton · Member Dashboard" anterior. */}
+            <div className="flex items-center gap-2.5">
+              <AtonLogo height={18} />
+              <span className="text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted-foreground)]">
+                · Member Dashboard
+              </span>
             </div>
             <h1 className="mt-2 truncate font-[family-name:var(--font-montserrat)] text-3xl font-bold leading-tight text-[color:var(--foreground)] sm:text-4xl">
               {workspaceName}
             </h1>
           </div>
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             {/* PeriodPicker só faz sentido na aba Dashboard */}
             {!isTonTab && <PeriodPicker />}
             <TierBadge
@@ -109,6 +119,8 @@ export async function Dashboard({
               habilitadoAt={habilitadoAt}
               expiresAt={expiresAt}
             />
+            {/* Toggle light/dark isolado (produto não tem login/avatar) */}
+            <ThemeToggle hmac={hmac} />
           </div>
         </header>
 

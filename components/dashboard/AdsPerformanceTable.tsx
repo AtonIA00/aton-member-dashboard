@@ -19,17 +19,21 @@ function pct(n: number): string {
   return (n * 100).toFixed(1).replace(".", ",") + "%";
 }
 
-// Mesmos thresholds do dashboard.html: [vermelho, laranja, amarelo, verde].
+// Heat pills com contraste em ambos os temas. Light usa tons -700 sobre bg
+// -100 (claro); dark usa tons -300/-400 sobre bg /15 (suave). Token Aton
+// pra "verde" = emerald (#10b981), "amarelo" = amber, "laranja" = orange,
+// "vermelho" = destructive (red).
+//
 // hC(v, [t0, t1, t2]) → t2+: verde, t1+: amarelo, t0+: laranja, abaixo: vermelho.
 function heatClass(v: number, thresholds: [number, number, number]): string {
   const v100 = v * 100;
   if (v100 >= thresholds[2])
-    return "bg-[rgba(105,240,174,0.18)] text-[#69F0AE]";
+    return "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300";
   if (v100 >= thresholds[1])
-    return "bg-[rgba(255,215,64,0.18)] text-[#FFD740]";
+    return "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300";
   if (v100 >= thresholds[0])
-    return "bg-[rgba(255,152,0,0.18)] text-[#FF9800]";
-  return "bg-[rgba(255,82,82,0.18)] text-[color:var(--destructive)]";
+    return "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300";
+  return "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300";
 }
 
 const PCT_AGEND_THRESHOLDS: [number, number, number] = [5, 15, 30];
@@ -130,7 +134,7 @@ export function AdsPerformanceTable({ rows }: Props) {
             {sorted.map((r, i) => (
               <tr
                 key={`${r.idAnuncio}-${i}`}
-                className="border-t border-white/[0.03] transition-colors hover:bg-[color:var(--primary)]/5"
+                className="border-t border-[color:var(--border)]/60 transition-colors hover:bg-[color:var(--primary)]/5"
               >
                 <td className="px-4 py-3 text-xs text-[color:var(--muted-foreground)]">
                   {r.isUnknownId ? "—" : r.rank}

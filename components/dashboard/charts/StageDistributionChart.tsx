@@ -15,16 +15,20 @@ import type { StageDistributionPoint } from "@/lib/charts";
 import { ChartCard } from "./ChartCard";
 import { EmptyChart } from "./EmptyChart";
 import { AtonTooltip } from "./tooltip";
+import { CHART_AXIS } from "@/lib/chart-palette";
+import { useTheme } from "@/lib/use-theme";
 
 const HEIGHT = 250;
 
 const AXIS_STYLE = {
   fontSize: 11,
-  fill: "#8899AA",
+  fill: CHART_AXIS.text,
   fontFamily: "var(--font-geist-sans)",
 };
 
 export function StageDistributionChart({ data }: { data: StageDistributionPoint[] }) {
+  const theme = useTheme();
+  const labelFill = theme === "dark" ? "#f4f6fb" : "#0b1220";
   const total = data.reduce((s, d) => s + d.value, 0);
   if (total === 0) {
     return (
@@ -46,12 +50,12 @@ export function StageDistributionChart({ data }: { data: StageDistributionPoint[
             data={data}
             margin={{ top: 8, right: 32, bottom: 0, left: 8 }}
           >
-            <CartesianGrid stroke="rgba(0,229,255,0.06)" horizontal={false} />
+            <CartesianGrid stroke={CHART_AXIS.grid} horizontal={false} />
             <XAxis
               type="number"
               tick={AXIS_STYLE}
               tickLine={false}
-              axisLine={{ stroke: "rgba(0,229,255,0.10)" }}
+              axisLine={{ stroke: CHART_AXIS.axis }}
               allowDecimals={false}
             />
             <YAxis
@@ -64,7 +68,7 @@ export function StageDistributionChart({ data }: { data: StageDistributionPoint[
             />
             <Tooltip
               content={<AtonTooltip showPercent />}
-              cursor={{ fill: "rgba(0,229,255,0.06)" }}
+              cursor={{ fill: "rgba(0,87,255,0.08)" }}
             />
             <Bar
               dataKey="value"
@@ -75,7 +79,7 @@ export function StageDistributionChart({ data }: { data: StageDistributionPoint[
               animationEasing="ease-out"
             >
               {data.map((d, i) => (
-                <Cell key={i} fill={d.color} fillOpacity={0.85} />
+                <Cell key={i} fill={d.color} fillOpacity={0.92} />
               ))}
               <LabelList
                 dataKey="value"
@@ -83,7 +87,7 @@ export function StageDistributionChart({ data }: { data: StageDistributionPoint[
                 formatter={(v) =>
                   typeof v === "number" ? v.toLocaleString("pt-BR") : String(v ?? "")
                 }
-                style={{ fill: "#E8EDF2", fontSize: 11, fontWeight: 600 }}
+                style={{ fill: labelFill, fontSize: 11, fontWeight: 600 }}
               />
             </Bar>
           </BarChart>

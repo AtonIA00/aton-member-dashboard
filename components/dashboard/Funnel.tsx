@@ -2,13 +2,13 @@ import type { FunnelStep } from "@/lib/leads";
 
 type Props = { steps: FunnelStep[] };
 
-// Cores idênticas ao dashboard.html do CRM Master, mas usando os tokens
-// CSS do design system Aton. Ordem: Leads Totais → Interagiram → MQL Sim → Agendado+.
+// Paleta Aton v2 com diferenciação por etapa.
+// Ordem: Leads Totais → Interagiram → MQL Sim → Agendado+.
 const STEP_COLORS = [
-  "var(--primary)",         // ciano
-  "#4FC3F7",                // azul-claro (Interagiram = "Está no script" + além)
-  "#69F0AE",                // verde (MQL Sim)
-  "#FFD740",                // amber (Agendado+)
+  "#0057ff", // aton-blue (Total)
+  "#00c2ff", // aton-blue-cyan (Interagiram)
+  "#10b981", // success (MQL Sim)
+  "#f59e0b", // warning/amber (Agendado+)
 ];
 
 function pct(n: number): string {
@@ -43,9 +43,9 @@ export function Funnel({ steps }: Props) {
               <div className="w-28 flex-shrink-0 text-right text-xs font-semibold text-[color:var(--muted-foreground)]">
                 {s.label}
               </div>
-              <div className="relative h-8 flex-1 overflow-hidden rounded-md bg-white/[0.03]">
+              <div className="relative h-8 flex-1 overflow-hidden rounded-md bg-[color:var(--surface-2)]/60">
                 <div
-                  className="absolute inset-y-0 left-0 flex items-center rounded-md px-2.5 text-[11px] font-bold text-[color:var(--background)] transition-[width] duration-500"
+                  className="absolute inset-y-0 left-0 flex items-center rounded-md px-2.5 text-[11px] font-bold text-white transition-[width] duration-500"
                   style={{
                     width: `${widthPct}%`,
                     background: color,

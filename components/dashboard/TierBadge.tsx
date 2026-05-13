@@ -21,19 +21,20 @@ const TIER_LABEL: Record<Tier, string> = {
 type Variant = "stable" | "info" | "warn" | "urgent" | "critical";
 
 const VARIANT_STYLE: Record<Variant, string> = {
-  // Pro/Enterprise — sólido ciano, sem urgência.
+  // Pro/Enterprise — sólido azul Aton, sem urgência.
   stable:
     "border-[color:var(--primary)]/40 bg-[color:var(--primary)]/10 text-[color:var(--primary)]",
-  // Trial > 7d — ciano discreto, ainda relaxado.
+  // Trial > 7d — azul discreto, ainda relaxado.
   info:
     "border-[color:var(--primary)]/40 bg-[color:var(--primary)]/10 text-[color:var(--primary)]",
-  // Trial 2-7d — amarelo (atenção sutil).
+  // Trial 2-7d — amarelo (atenção sutil). Light: amber-700 pra contraste em
+  // bg branco; dark: tom dourado quente.
   warn:
-    "border-[#FFD740]/50 bg-[#FFD740]/10 text-[#FFD740]",
+    "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:border-[#FFD740]/50 dark:bg-[#FFD740]/10 dark:text-[#FFD740]",
   // Trial 1d — laranja (urgência).
   urgent:
-    "border-[#FF9800]/55 bg-[#FF9800]/12 text-[#FF9800]",
-  // Trial <24h — vermelho com pulso sutil.
+    "border-orange-500/40 bg-orange-500/10 text-orange-700 dark:border-[#FF9800]/55 dark:bg-[#FF9800]/12 dark:text-[#FF9800]",
+  // Trial <24h — vermelho com pulso sutil (destructive token já adapta).
   critical:
     "border-[color:var(--destructive)]/60 bg-[color:var(--destructive)]/12 text-[color:var(--destructive)]",
 };

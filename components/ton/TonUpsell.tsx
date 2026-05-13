@@ -13,7 +13,7 @@ export function TonUpsell() {
           className="pointer-events-none absolute inset-0 opacity-40"
           style={{
             background:
-              "radial-gradient(60% 50% at 50% 0%, rgba(0, 229, 255, 0.18) 0%, rgba(0, 229, 255, 0) 70%)",
+              "radial-gradient(60% 50% at 50% 0%, rgba(0, 87, 255, 0.16) 0%, rgba(0, 87, 255, 0) 70%)",
           }}
         />
 
@@ -25,7 +25,7 @@ export function TonUpsell() {
 
           <h2 className="font-[family-name:var(--font-montserrat)] text-3xl font-extrabold leading-tight tracking-tight text-[color:var(--foreground)] sm:text-4xl">
             Conheça o{" "}
-            <span className="bg-gradient-to-r from-[color:var(--primary)] to-[#69F0AE] bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-[color:var(--primary)] to-[#00c2ff] bg-clip-text text-transparent">
               TON
             </span>
           </h2>
@@ -57,7 +57,7 @@ export function TonUpsell() {
             href={WHATSAPP_CTA}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-8 inline-flex items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[color:var(--primary)] px-7 py-3.5 font-[family-name:var(--font-montserrat)] text-sm font-bold tracking-wide text-[color:var(--primary-foreground)] shadow-[0_8px_30px_rgba(0,229,255,0.25)] transition-transform hover:scale-[1.02] active:scale-[0.99]"
+            className="mt-8 inline-flex items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[color:var(--primary)] px-7 py-3.5 font-[family-name:var(--font-montserrat)] text-sm font-bold tracking-wide text-[color:var(--primary-foreground)] shadow-[0_8px_30px_rgba(0,87,255,0.30)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--aton-blue-mid)] hover:shadow-[0_12px_36px_rgba(0,87,255,0.40)] active:translate-y-0"
           >
             Falar com o Suporte
           </a>

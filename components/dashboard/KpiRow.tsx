@@ -28,15 +28,17 @@ type Card = {
 };
 
 const ACCENT_BAR: Record<Card["accent"], string> = {
+  // accent name "cyan" preservado por compat, mas pinta com aton-blue agora.
   cyan: "from-[color:var(--primary)]",
-  green: "from-[#69F0AE]",
-  amber: "from-[#FFD740]",
+  green: "from-[#10b981]",
+  amber: "from-[#f59e0b]",
   neutral: "from-[color:var(--muted-foreground)]",
 };
 
 const CHIP_STYLE: Record<Delta["classification"], string> = {
-  // outline: border + texto colorido, sem fundo.
-  positive: "border-[#69F0AE]/55 text-[#69F0AE]",
+  // outline: border + texto colorido, sem fundo. Cores literais com
+  // contraste OK em ambos os temas (success/destructive da paleta Aton).
+  positive: "border-[#10b981]/55 text-[#10b981]",
   negative: "border-[color:var(--destructive)]/55 text-[color:var(--destructive)]",
   neutral: "border-[color:var(--muted-foreground)]/40 text-[color:var(--muted-foreground)]",
 };

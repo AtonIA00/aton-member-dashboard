@@ -6,7 +6,7 @@ type Props = {
 export function EmptyChart({ message, height = 250 }: Props) {
   return (
     <div
-      className="flex items-center justify-center rounded-md border border-dashed border-[color:var(--border)] bg-white/[0.02]"
+      className="flex items-center justify-center rounded-md border border-dashed border-[color:var(--border)] bg-[color:var(--surface-2)]/40"
       style={{ height }}
     >
       <div className="flex flex-col items-center gap-2 text-center">

@@ -15,16 +15,22 @@ import type { CampaignVolumePoint } from "@/lib/charts";
 import { ChartCard } from "./ChartCard";
 import { EmptyChart } from "./EmptyChart";
 import { AtonTooltip } from "./tooltip";
+import { CHART_AXIS, CHART_COLORS } from "@/lib/chart-palette";
+import { useTheme } from "@/lib/use-theme";
 
 const HEIGHT = 320;
 
 const AXIS_STYLE = {
   fontSize: 11,
-  fill: "#8899AA",
+  fill: CHART_AXIS.text,
   fontFamily: "var(--font-geist-sans)",
 };
 
 export function CampaignVolumeChart({ data }: { data: CampaignVolumePoint[] }) {
+  const theme = useTheme();
+  // Cor do label que fica do lado de fora da barra (sobre o bg do card).
+  // Precisa ter contraste tanto em light quanto em dark.
+  const labelFill = theme === "dark" ? "#f4f6fb" : "#0b1220";
   // Decisão: esconder (placeholder) quando 1 campanha só — o KPI de
   // "Campanhas ativas" já comunica isso e barra única polui visualmente.
   if (data.length <= 1) {
@@ -54,12 +60,12 @@ export function CampaignVolumeChart({ data }: { data: CampaignVolumePoint[] }) {
             data={data}
             margin={{ top: 8, right: 32, bottom: 0, left: 8 }}
           >
-            <CartesianGrid stroke="rgba(0,229,255,0.06)" horizontal={false} />
+            <CartesianGrid stroke={CHART_AXIS.grid} horizontal={false} />
             <XAxis
               type="number"
               tick={AXIS_STYLE}
               tickLine={false}
-              axisLine={{ stroke: "rgba(0,229,255,0.10)" }}
+              axisLine={{ stroke: CHART_AXIS.axis }}
               allowDecimals={false}
             />
             <YAxis
@@ -80,7 +86,7 @@ export function CampaignVolumeChart({ data }: { data: CampaignVolumePoint[] }) {
                   }}
                 />
               }
-              cursor={{ fill: "rgba(0,229,255,0.06)" }}
+              cursor={{ fill: "rgba(0,87,255,0.08)" }}
             />
             <Bar
               dataKey="total"
@@ -91,12 +97,16 @@ export function CampaignVolumeChart({ data }: { data: CampaignVolumePoint[] }) {
               animationEasing="ease-out"
             >
               {data.map((_, i) => (
-                <Cell key={i} fill="#00E5FF" fillOpacity={0.85 - i * 0.04} />
+                <Cell
+                  key={i}
+                  fill={CHART_COLORS.primary}
+                  fillOpacity={0.95 - i * 0.06}
+                />
               ))}
               <LabelList
                 dataKey="total"
                 position="right"
-                style={{ fill: "#E8EDF2", fontSize: 11, fontWeight: 600 }}
+                style={{ fill: labelFill, fontSize: 11, fontWeight: 600 }}
               />
             </Bar>
           </BarChart>

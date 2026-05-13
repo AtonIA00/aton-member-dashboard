@@ -147,8 +147,8 @@ export function buildMqlDonut(leads: LeadRow[]): MqlDonutSlice[] {
   }
 
   return [
-    { name: "Sim", value: sim, color: "#69F0AE" },
-    { name: "Não", value: nao, color: "#FF5252" },
+    { name: "Sim", value: sim, color: "#10b981" }, // success
+    { name: "Não", value: nao, color: "#dc2626" }, // destructive
   ];
 }
 

@@ -32,41 +32,43 @@ export function classify(etapaFunil: string | null | undefined): Grupo {
   return "Outros";
 }
 
-// Cor por grupo (token CSS do design system Aton).
+// Cor por grupo (paleta Aton v2). Valores hex literais porque Recharts SVG
+// não interpola var() em atributos `fill`/`stroke`.
 export const GRUPO_COLOR: Record<Grupo, string> = {
-  Novo: "var(--primary)",       // ciano
-  "Em conversa": "#4FC3F7",     // azul-claro
-  "Agendado+": "#69F0AE",       // verde
-  Descartado: "var(--destructive)", // vermelho
-  Outros: "var(--muted-foreground)",
+  Novo: "#0057ff",        // aton-blue (primary)
+  "Em conversa": "#00c2ff", // aton-blue-cyan (secundária)
+  "Agendado+": "#10b981", // success
+  Descartado: "#dc2626",  // destructive
+  Outros: "#6b7280",      // neutro
 };
 
 // Cor de fundo (chip) e cor de texto por grupo — usado em chips/badges
-// da tabela detalhada.
+// da tabela detalhada. Aqui CSS vars FUNCIONAM (HTML/CSS, não SVG attrs).
+// Fundos com transparência leve pra contrastar em ambos os temas.
 export const GRUPO_CHIP: Record<Grupo, { bg: string; text: string; border: string }> = {
   Novo: {
-    bg: "rgba(0, 229, 255, 0.12)",
-    text: "var(--primary)",
-    border: "rgba(0, 229, 255, 0.35)",
+    bg: "rgba(0, 87, 255, 0.10)",
+    text: "#0057ff",
+    border: "rgba(0, 87, 255, 0.30)",
   },
   "Em conversa": {
-    bg: "rgba(79, 195, 247, 0.12)",
-    text: "#4FC3F7",
-    border: "rgba(79, 195, 247, 0.35)",
+    bg: "rgba(0, 194, 255, 0.10)",
+    text: "#00aee8",
+    border: "rgba(0, 194, 255, 0.30)",
   },
   "Agendado+": {
-    bg: "rgba(105, 240, 174, 0.12)",
-    text: "#69F0AE",
-    border: "rgba(105, 240, 174, 0.35)",
+    bg: "rgba(16, 185, 129, 0.10)",
+    text: "#10b981",
+    border: "rgba(16, 185, 129, 0.30)",
   },
   Descartado: {
-    bg: "rgba(255, 82, 82, 0.12)",
-    text: "var(--destructive)",
-    border: "rgba(255, 82, 82, 0.35)",
+    bg: "rgba(220, 38, 38, 0.10)",
+    text: "#dc2626",
+    border: "rgba(220, 38, 38, 0.30)",
   },
   Outros: {
-    bg: "rgba(136, 153, 170, 0.10)",
+    bg: "rgba(107, 114, 128, 0.10)",
     text: "var(--muted-foreground)",
-    border: "rgba(136, 153, 170, 0.25)",
+    border: "rgba(107, 114, 128, 0.25)",
   },
 };
