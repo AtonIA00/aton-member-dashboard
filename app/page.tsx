@@ -31,7 +31,15 @@ export default async function Page({
     signature: firstString(sp.signature),
   };
 
-  const hmac = validateUchatSignature(params, { maxAgeSeconds: 300 });
+  // Janela de 12h pra freshness do HMAC. A assinatura HMAC continua sendo a
+  // barreira real contra forge — sem a UCHAT_PRIVATE_KEY ninguém produz
+  // signature válida. O timestamp só protege contra REPLAY de URLs antigas;
+  // 5min era curto demais pro uso real: usuário deixa o iframe Uchat aberto
+  // por horas e cada clique de filtro/período re-renderiza server-side e
+  // re-valida HMAC. Com 300s, qualquer navegação após 5min cai em
+  // InvalidAccess. 12h cobre uma sessão de trabalho inteira e mantém a
+  // proteção contra replay de longa data.
+  const hmac = validateUchatSignature(params, { maxAgeSeconds: 12 * 60 * 60 });
   if (!hmac.ok) {
     console.warn("[page] hmac failed", { reason: hmac.reason });
     return <InvalidAccess />;
