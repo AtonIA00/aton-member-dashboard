@@ -71,20 +71,9 @@ export async function Dashboard({
   // Fetch só quando estamos no tab Dashboard. Aba TON não precisa do
   // agregado pesado — economiza um fetch a cada navegação.
   //
-  // TEMP DEBUG: log explícito do shape antes de chamar getDashboardData.
-  // Se SSR explodir, o stack trace + esse contexto correlaciona o bug
-  // observado em prod ("Algo deu errado" com period=today em ACM 271221).
-  if (!isTonTab) {
-    console.warn("[dashboard][debug] computing", {
-      workspaceId,
-      tier,
-      periodKey,
-      customFrom,
-      customTo,
-      filters,
-    });
-  }
-
+  // .catch logga contexto (workspace/period/from/to) + stack pro runner e
+  // re-lança com ctx agregado na message. Assim error.tsx mostra a chave
+  // do bug pro suporte e os logs do container ficam acionáveis.
   const dashboardDataPromise = isTonTab
     ? null
     : getDashboardData(
@@ -93,7 +82,6 @@ export async function Dashboard({
         filters,
         periodKey,
       ).catch((err) => {
-        // Re-throw com contexto pra error.tsx exibir + runner logar.
         const ctx = `workspace=${workspaceId} period=${periodKey} from=${customFrom ?? "-"} to=${customTo ?? "-"}`;
         const msg = err instanceof Error ? err.message : String(err);
         console.error("[dashboard][SSR] getDashboardData failed", {

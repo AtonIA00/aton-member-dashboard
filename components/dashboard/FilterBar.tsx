@@ -63,14 +63,21 @@ export function FilterBar({ dimensions, totalNoPeriodo }: Props) {
     });
   }
 
-  // Sem leads no período → não faz sentido mostrar filtros vazios.
-  if (totalNoPeriodo === 0) return null;
-
   // Anúncios disponíveis dado o filtro de Campanha atual (cascade).
+  //
+  // IMPORTANTE: este useMemo precisa ficar ANTES de qualquer return
+  // condicional. Mover pra depois do "if (totalNoPeriodo===0) return null"
+  // viola Rules of Hooks — quando o workspace alterna entre ter e não ter
+  // leads no período (ex: clica em "Hoje" e ACM tem 0 leads hoje), o
+  // hook count diverge entre renders e React lança #300 ("Rendered fewer
+  // hooks than expected"). Bug observado em prod com period=today.
   const anunciosDisponiveis = useMemo(() => {
     if (!filters.campanha) return dimensions.anuncios;
     return dimensions.anuncios.filter((a) => a.campanha === filters.campanha);
   }, [dimensions.anuncios, filters.campanha]);
+
+  // Sem leads no período → não faz sentido mostrar filtros vazios.
+  if (totalNoPeriodo === 0) return null;
 
   const someActive = hasAnyFilter(filters);
 
