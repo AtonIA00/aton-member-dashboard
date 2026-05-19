@@ -86,11 +86,28 @@ export default function PageError({
           </button>
         </div>
 
-        {error.digest && (
-          <div className="mt-6 font-mono text-[11px] text-[color:var(--muted-foreground)]/60">
-            ref: {error.digest}
+        {/* Detalhes pra debug: msg sempre visível (ajuda suporte a triar),
+            digest só quando vem do server-side (Next.js atribui em prod). */}
+        <details className="mt-6 inline-block max-w-full text-left">
+          <summary className="cursor-pointer font-mono text-[11px] text-[color:var(--muted-foreground)]/70 hover:text-[color:var(--muted-foreground)]">
+            Detalhes técnicos
+          </summary>
+          <div className="mt-2 max-w-md rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)]/60 p-3 font-mono text-[10px] leading-relaxed text-[color:var(--muted-foreground)]">
+            <div>
+              <span className="opacity-60">name:</span> {error.name || "Error"}
+            </div>
+            {error.message && (
+              <div className="mt-1 break-words">
+                <span className="opacity-60">msg:</span> {error.message}
+              </div>
+            )}
+            {error.digest && (
+              <div className="mt-1">
+                <span className="opacity-60">ref:</span> {error.digest}
+              </div>
+            )}
           </div>
-        )}
+        </details>
 
         <div className="mt-12 flex flex-col items-center gap-2 text-xs text-[color:var(--muted-foreground)]">
           <AtonLogo height={16} />

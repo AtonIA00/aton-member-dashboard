@@ -70,6 +70,21 @@ export async function Dashboard({
 
   // Fetch só quando estamos no tab Dashboard. Aba TON não precisa do
   // agregado pesado — economiza um fetch a cada navegação.
+  //
+  // TEMP DEBUG: log explícito do shape antes de chamar getDashboardData.
+  // Se SSR explodir, o stack trace + esse contexto correlaciona o bug
+  // observado em prod ("Algo deu errado" com period=today em ACM 271221).
+  if (!isTonTab) {
+    console.warn("[dashboard][debug] computing", {
+      workspaceId,
+      tier,
+      periodKey,
+      customFrom,
+      customTo,
+      filters,
+    });
+  }
+
   const dashboardDataPromise = isTonTab
     ? null
     : getDashboardData(
@@ -77,7 +92,19 @@ export async function Dashboard({
         resolvePeriod(periodKey, customFrom, customTo),
         filters,
         periodKey,
-      );
+      ).catch((err) => {
+        // Re-throw com contexto pra error.tsx exibir + runner logar.
+        const ctx = `workspace=${workspaceId} period=${periodKey} from=${customFrom ?? "-"} to=${customTo ?? "-"}`;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[dashboard][SSR] getDashboardData failed", {
+          ctx,
+          msg,
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+        const wrapped = new Error(`[${ctx}] ${msg}`);
+        if (err instanceof Error && err.stack) wrapped.stack = err.stack;
+        throw wrapped;
+      });
 
   return (
     <main className="relative min-h-screen overflow-hidden">
