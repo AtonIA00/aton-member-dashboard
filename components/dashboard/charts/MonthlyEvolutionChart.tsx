@@ -15,6 +15,7 @@ import { ChartCard } from "./ChartCard";
 import { EmptyChart } from "./EmptyChart";
 import { AtonTooltip } from "./tooltip";
 import { CHART_AXIS, CHART_COLORS } from "@/lib/chart-palette";
+import { GRUPO_LABEL } from "@/lib/classify";
 
 const HEIGHT = 320;
 
@@ -119,7 +120,7 @@ export function MonthlyEvolutionChart({ data }: { data: MonthlyEvolutionPoint[] 
               yAxisId="left"
               type="monotone"
               dataKey="agendado"
-              name="Agendamento+"
+              name={GRUPO_LABEL["Agendado+"]}
               stroke={CHART_COLORS.secondary}
               strokeWidth={2}
               dot={{ r: 3, fill: CHART_COLORS.secondary }}

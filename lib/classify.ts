@@ -5,6 +5,20 @@
 
 export type Grupo = "Novo" | "Em conversa" | "Agendado+" | "Descartado" | "Outros";
 
+// Rótulo de EXIBIÇÃO por grupo. Separado do VALOR interno do Grupo — este
+// permanece "Agendado+" (taxonomia canônica da METODOLOGIA, usado como chave
+// em Records/comparações e nos filtros). A pedido do CEO (jun/2026), o grupo
+// "Agendado+" passa a ser EXIBIDO como "Convertido" em todo o produto (KPIs,
+// funil, filtros, gráficos e respostas do TON). Único ponto pra trocar o
+// texto visível — não tocar nos valores de Grupo acima.
+export const GRUPO_LABEL: Record<Grupo, string> = {
+  Novo: "Novo",
+  "Em conversa": "Em conversa",
+  "Agendado+": "Convertido",
+  Descartado: "Descartado",
+  Outros: "Outros",
+};
+
 const SET_AGENDADO_PLUS = new Set([
   "agendado",
   "especialista",

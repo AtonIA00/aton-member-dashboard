@@ -6,7 +6,7 @@ import {
   resolvePeriod,
   type PeriodKey,
 } from "@/lib/period";
-import { classify } from "@/lib/classify";
+import { classify, GRUPO_LABEL } from "@/lib/classify";
 
 // Tools expostas pro TON via OpenAI tool calling. Cada tool:
 // - Recebe workspace_id server-side (do HMAC validado) + params do modelo
@@ -49,7 +49,7 @@ export const TOOL_DEFINITIONS = [
     function: {
       name: "get_funnel",
       description:
-        "Retorna a distribuição de leads pelas 5 etapas canônicas do funil (Novo / Em conversa / Agendado+ / Descartado / Outros) no período.",
+        "Retorna a distribuição de leads pelas 5 etapas canônicas do funil (Novo / Em conversa / Convertido / Descartado / Outros) no período. 'Convertido' agrupa agendado/especialista/negociação/financeiro.",
       parameters: {
         type: "object",
         properties: {
@@ -102,7 +102,7 @@ export const TOOL_DEFINITIONS = [
     function: {
       name: "get_stage_distribution",
       description:
-        "Retorna count + % por etapa do funil agrupada na taxonomia canônica (Novo / Em conversa / Agendado+ / Descartado / Outros).",
+        "Retorna count + % por etapa do funil agrupada na taxonomia canônica (Novo / Em conversa / Convertido / Descartado / Outros). 'Convertido' agrupa agendado/especialista/negociação/financeiro.",
       parameters: {
         type: "object",
         properties: {
@@ -275,7 +275,7 @@ export async function executeTool(
       const range = resolvePeriod(period);
       const data = await getDashboardData(workspaceId, range, {}, period);
       const stages = data.charts.stageDistribution.map((s) => ({
-        name: s.name,
+        name: GRUPO_LABEL[s.name],
         value: s.value,
         pct: data.kpis.total > 0 ? +((s.value / data.kpis.total) * 100).toFixed(1) : 0,
       }));
@@ -303,7 +303,7 @@ export async function executeTool(
           data: l.data,
           first_name: firstName(l.nome_lead),
           telefone_mascarado: maskPhone(l.ddd_lead, l.telefone),
-          etapa_grupo: classify(l.etapa_funil),
+          etapa_grupo: GRUPO_LABEL[classify(l.etapa_funil)],
           etapa_raw: l.etapa_funil,
           mql: l.mql,
           nome_campanha: l.nome_campanha,

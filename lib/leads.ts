@@ -1,6 +1,6 @@
 import "server-only";
 import { getSupabaseAdmin } from "./supabase/server";
-import { classify } from "./classify";
+import { classify, GRUPO_LABEL } from "./classify";
 import {
   previousRange,
   type DateRange,
@@ -368,7 +368,7 @@ export function computeFunnel(leads: LeadRow[]): FunnelStep[] {
     { label: "Leads Totais", count: total, pctOfTotal: 1 },
     { label: "Interagiram", count: interagiram, pctOfTotal: pct(interagiram) },
     { label: "MQL Sim", count: mqlSim, pctOfTotal: pct(mqlSim) },
-    { label: "Agendado+", count: agendadoPlus, pctOfTotal: pct(agendadoPlus) },
+    { label: GRUPO_LABEL["Agendado+"], count: agendadoPlus, pctOfTotal: pct(agendadoPlus) },
   ];
 }
 

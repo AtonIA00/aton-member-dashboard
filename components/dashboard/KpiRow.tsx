@@ -1,5 +1,6 @@
 import type { Deltas, Kpis } from "@/lib/leads";
 import type { Delta } from "@/lib/deltas";
+import { GRUPO_LABEL } from "@/lib/classify";
 
 type Props = {
   kpis: Kpis;
@@ -73,7 +74,7 @@ export function KpiRow({ kpis, kpisPrevious, deltas }: Props) {
       delta: deltas?.mqlRate,
     },
     {
-      label: "Agendamento+",
+      label: GRUPO_LABEL["Agendado+"],
       value: int(kpis.agendadoPlus),
       valuePrevious: kpisPrevious ? int(kpisPrevious.agendadoPlus) : undefined,
       sub: `${pct(kpis.pctAgendamento)} do total`,

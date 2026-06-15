@@ -1,4 +1,4 @@
-import { classify, type Grupo } from "./classify";
+import { classify, GRUPO_LABEL, type Grupo } from "./classify";
 import type { LeadRow } from "./leads";
 
 // Filtros avançados do dashboard. Espelhados em URL params pra deep-linking
@@ -50,7 +50,9 @@ const ETAPA_GROUP_MAP: Record<EtapaKey, Grupo> = {
 export const ETAPA_LABEL: Record<EtapaKey, string> = {
   novo: "Novo",
   em_conversa: "Em conversa",
-  agendado_mais: "Agendado+",
+  // Exibido como "Convertido" (mapeado via GRUPO_LABEL). A chave/valor internos
+  // do grupo seguem "Agendado+" — ver lib/classify.ts.
+  agendado_mais: GRUPO_LABEL["Agendado+"],
   descartado: "Descartado",
   outros: "Outros",
 };
