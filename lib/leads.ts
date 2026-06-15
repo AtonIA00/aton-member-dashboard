@@ -176,15 +176,31 @@ async function fetchBaseLeads(
 /**
  * Filtra leads in-memory pelo range (inclusive ambos os limites).
  * Helper interno usado quando o fetch é expandido pra cobrir current+previous.
+ *
+ * Comparação por PORÇÃO DE DATA (YYYY-MM-DD), não por string ISO completa.
+ *
+ * Por quê: o PostgREST devolve `data` como ISO com offset explícito
+ * ("2026-06-15T00:00:00+00:00"), enquanto uma borda construída como
+ * "2026-06-15T00:00:00Z" usa sufixo Z. Comparar essas strings inteiras
+ * quebra: no caractere do offset, '+' (43) < 'Z' (90), então
+ * "...00:00+00:00" < "...00:00Z" é TRUE — e TODO lead de meia-noite UTC
+ * era descartado da borda `from` do próprio dia. Resultado observado:
+ * "Hoje" mostrava 0 leads mesmo com leads datados de hoje (o fetch no DB
+ * pegava, o re-filtro em memória derrubava). Ranges multi-dia só perdiam
+ * os leads do dia-borda (undercount silencioso).
+ *
+ * `data` é semanticamente uma data (sempre meia-noite UTC), então comparar
+ * só os 10 primeiros chars contra range.from/to (YYYY-MM-DD) é robusto e
+ * livre de ambiguidade de formato/timezone — mesma convenção que
+ * buildDailyVolume/buildMonthlyEvolution já usam.
  */
 function leadsInRange(leads: LeadRow[], range: DateRange): LeadRow[] {
   if (!range.from && !range.to) return leads;
-  const fromIso = range.from ? `${range.from}T00:00:00Z` : null;
-  const toIso = range.to ? `${range.to}T23:59:59.999Z` : null;
   return leads.filter((l) => {
     if (!l.data) return false;
-    if (fromIso && l.data < fromIso) return false;
-    if (toIso && l.data > toIso) return false;
+    const day = l.data.slice(0, 10); // "YYYY-MM-DD" em UTC
+    if (range.from && day < range.from) return false;
+    if (range.to && day > range.to) return false;
     return true;
   });
 }
