@@ -70,6 +70,9 @@ function parseCoreResponse(json: unknown): RetornoComercial | null {
 
 // Sample pra dev/preview visual sem depender do Core.
 // Ligar com MEMBER_DASHBOARD_RETORNO_COMERCIAL_MOCK=true.
+// Espelha as realidades do payload real do Core (Royal ws 300729): nome pode
+// vir "", telefone com +55, agendado_em já formatado "DD/MM, HH:MM", e
+// mediana_util_min GRANDE (minutos úteis — pode passar de dias).
 function mockData(): RetornoComercial {
   return {
     janela_dias: 14,
@@ -79,11 +82,11 @@ function mockData(): RetornoComercial {
     aguardando: 3,
     nao_localizados: 1,
     dentro_sla: 7,
-    mediana_util_min: 22,
+    mediana_util_min: 4992,
     lista_aguardando: [
-      { nome: "Ana Souza", telefone: "(48) 99999-1234", campanha: "Lançamento Jurerê", agendado_em: "2026-07-05" },
-      { nome: "Carlos Lima", telefone: "(11) 98888-5678", campanha: "Meta — Cobertura", agendado_em: "2026-07-06" },
-      { nome: "Beatriz Rocha", telefone: "(21) 97777-4321", campanha: "Indicação", agendado_em: "2026-07-07" },
+      { nome: "Carolina Antoniazzi", telefone: "+5527999844698", campanha: "Royal View", agendado_em: "23/06, 14:50" },
+      { nome: "", telefone: "+559188208412", campanha: "Royal View", agendado_em: "29/06, 13:46" },
+      { nome: "Catarine 🍒", telefone: "+5527998921801", campanha: "Royal View", agendado_em: "01/07, 13:36" },
     ],
   };
 }
@@ -109,13 +112,22 @@ export async function getRetornoComercial(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const url = `${coreUrl}/api/internal/retorno-comercial?workspace_id=${encodeURIComponent(workspaceId)}`;
-    const res = await fetch(url, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${sharedSecret}` },
+    // POST + body { workspace_id } + Bearer — mesmo shape do /api/internal/openai-key
+    // (consistência com os endpoints internos do Core). O Core aceita
+    // workspace_id ou uchat_workspace_id.
+    const res = await fetch(`${coreUrl}/api/internal/retorno-comercial`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${sharedSecret}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ workspace_id: workspaceId }),
       cache: "no-store",
       signal: controller.signal,
     });
+    // 404 = workspace_not_found_or_unconfigured (sem token no Core) — esperado;
+    // seção some sem ruído de log.
+    if (res.status === 404) return null;
     if (!res.ok) {
       console.warn("[retorno-comercial] core !ok", { workspaceId, status: res.status });
       return null;

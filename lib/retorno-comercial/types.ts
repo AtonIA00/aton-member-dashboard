@@ -10,10 +10,13 @@
 // quanto pela UI client.
 
 export type LeadAguardando = {
+  /** Pode vir "" (lead sem nome no CRM) — a UI faz fallback pra telefone. */
   nome: string | null;
+  /** Vem com +55 (ex.: "+5527999844698"). A UI formata pra exibição. */
   telefone: string | null;
   campanha: string | null;
-  /** Quando o lead entrou em Agendado — ISO date (YYYY-MM-DD) ou timestamp. */
+  /** String JÁ formatada pelo Core pra exibição, ex.: "23/06, 14:50" (NÃO é ISO).
+   *  A UI exibe crua. */
   agendado_em: string | null;
 };
 

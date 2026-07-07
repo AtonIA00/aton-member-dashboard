@@ -21,20 +21,51 @@ type State =
   | { kind: "hidden" }
   | { kind: "ready"; data: RetornoComercial };
 
-function fmtDateBr(iso: string | null): string {
-  if (!iso) return "—";
-  const day = iso.slice(0, 10);
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
-  if (!m) return "—";
-  return `${m[3]}/${m[2]}/${m[1]}`;
-}
-
-function fmtDuracaoUtil(min: number): string {
+// Tempo de espera em MINUTOS ÚTEIS (Seg–Sáb 08–18). Pode ser grande — o
+// Core manda coisas como 4992 (~8 dias úteis, quando um retorno atrasou
+// muito). 1 dia útil = 10h = 600 min úteis. Régua: min → h → dias úteis.
+function fmtEsperaUtil(min: number): string {
   if (!min || min <= 0) return "—";
   if (min < 60) return `${min}min`;
-  const h = Math.floor(min / 60);
-  const r = min % 60;
-  return r ? `${h}h${String(r).padStart(2, "0")}` : `${h}h`;
+  if (min < 600) {
+    const h = Math.floor(min / 60);
+    const r = min % 60;
+    return r ? `${h}h${String(r).padStart(2, "0")}` : `${h}h`;
+  }
+  const dias = min / 600;
+  return `${dias.toFixed(1).replace(".", ",")} d úteis`;
+}
+
+// Telefone vem com +55 (ex.: "+5527999844698"). Formata pro padrão BR
+// legível; se não casar, mostra cru.
+function fmtTelefone(raw: string | null): string {
+  if (!raw) return "—";
+  const d = raw.replace(/\D/g, "");
+  let ddd: string, num: string;
+  if (d.startsWith("55") && (d.length === 12 || d.length === 13)) {
+    const r = d.slice(2);
+    ddd = r.slice(0, 2);
+    num = r.slice(2);
+  } else if (d.length === 10 || d.length === 11) {
+    ddd = d.slice(0, 2);
+    num = d.slice(2);
+  } else {
+    return raw;
+  }
+  const mid =
+    num.length === 9
+      ? `${num.slice(0, 5)}-${num.slice(5)}`
+      : num.length === 8
+        ? `${num.slice(0, 4)}-${num.slice(4)}`
+        : num;
+  return `(${ddd}) ${mid}`;
+}
+
+// nome pode vir "" — cai pro telefone formatado, senão rótulo neutro.
+function nomeDisplay(nome: string | null, telefone: string | null): string {
+  const n = (nome ?? "").trim();
+  if (n) return n;
+  return telefone ? fmtTelefone(telefone) : "Lead sem nome";
 }
 
 export function RetornoComercialSection({ enabled, hmac }: Props) {
@@ -181,7 +212,7 @@ function ReadyView({
 
         {/* Secundário: tempo médio */}
         <StatCard
-          value={fmtDuracaoUtil(data.mediana_util_min)}
+          value={fmtEsperaUtil(data.mediana_util_min)}
           label="Tempo médio de retorno"
           sub={`hora útil · meta ${data.sla_min}min`}
           accent="neutral"
@@ -216,16 +247,16 @@ function ReadyView({
                       className="border-t border-[color:var(--border)]/60 transition-colors hover:bg-[color:var(--primary)]/5"
                     >
                       <td className="px-4 py-2.5 text-sm font-medium text-[color:var(--foreground)]">
-                        {l.nome ?? "—"}
+                        {nomeDisplay(l.nome, l.telefone)}
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-[color:var(--muted-foreground)]">
-                        {l.telefone ?? "—"}
+                        {fmtTelefone(l.telefone)}
                       </td>
                       <td className="max-w-[220px] truncate px-4 py-2.5 text-xs text-[color:var(--foreground)]/90">
                         {l.campanha ?? "—"}
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-xs text-[color:var(--muted-foreground)] tabular-nums">
-                        {fmtDateBr(l.agendado_em)}
+                        {l.agendado_em ?? "—"}
                       </td>
                     </tr>
                   ))}
