@@ -125,7 +125,7 @@ export function RetornoComercialSection({ enabled, hmac }: Props) {
         </h2>
         {state.kind === "ready" && (
           <span className="ml-2 text-[11px] text-[color:var(--muted-foreground)]/70">
-            últimos {state.data.janela_dias} dias · via plataforma (UChat)
+            últimos {state.data.janela_dias} dias · via plataforma (Aton)
           </span>
         )}
       </div>
@@ -268,7 +268,7 @@ function ReadyView({
       )}
 
       <p className="mt-3 text-[11px] leading-relaxed text-[color:var(--muted-foreground)]/70">
-        Considera o retorno registrado <strong className="font-semibold">pela plataforma (UChat)</strong>.
+        Considera o retorno registrado <strong className="font-semibold">pela plataforma (Aton)</strong>.
         Horário comercial Seg–Sáb 08–18. Contatos feitos por outros canais não entram nesta conta.
       </p>
     </>
