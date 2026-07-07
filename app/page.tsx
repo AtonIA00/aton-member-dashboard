@@ -6,6 +6,7 @@ import { InvalidAccess } from "@/components/InvalidAccess";
 import { UpsellScreen } from "@/components/UpsellScreen";
 import { Dashboard } from "@/components/dashboard/Dashboard";
 import { parseTab } from "@/lib/tabs";
+import { isRetornoComercialEnabled } from "@/lib/retorno-comercial/source";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -85,6 +86,7 @@ export default async function Page({
       filters={filters}
       tab={tab}
       hmac={hmacForClient}
+      retornoComercialEnabled={isRetornoComercialEnabled(access)}
     />
   );
 }

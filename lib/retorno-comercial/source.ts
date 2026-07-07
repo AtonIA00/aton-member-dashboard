@@ -1,0 +1,136 @@
+import "server-only";
+import type { AccessGranted } from "@/lib/access";
+import type { LeadAguardando, RetornoComercial } from "./types";
+
+// Adapter da seção "Retorno do time comercial" (v1 — Opção 1: endpoint
+// interno do Aton Core).
+//
+// O Core já calcula handoff (gatherHandoffMetrics), agora gateado em
+// Agendado (N pequeno), com cache ~15min. O dash chama server-to-server com
+// o INTERNAL_SHARED_SECRET (mesmo canal do openai-key/ton-system-prompt),
+// passa o workspaceId e só renderiza. Régua idêntica garantida, zero
+// duplicação, sem credencial UChat no dash.
+//
+// ⚠️ Path e shape EXATOS a confirmar pelo Core. Isolei o parsing em
+// parseCoreResponse() — quando o shape final chegar, ajusta só ali.
+//
+// Degradação graciosa: QUALQUER falha (sem config, timeout, !ok, parse) →
+// retorna null. A UI esconde a seção nesse caso — nunca mostra "0%".
+
+// ── Gate ────────────────────────────────────────────────────────────────
+// Feature flag global (kill-switch) + toggle por assinante. Enquanto o
+// endpoint do Core não está no ar, MEMBER_DASHBOARD_RETORNO_COMERCIAL_ENABLED
+// fica ausente/false → a seção sobe DARK (código presente, invisível).
+export function isRetornoComercialEnabled(access: AccessGranted): boolean {
+  const flagOn = process.env.MEMBER_DASHBOARD_RETORNO_COMERCIAL_ENABLED === "true";
+  return flagOn && access.mostrarRetornoComercial !== false;
+}
+
+// ── Cache em memória (15min por workspace) ────────────────────────────────
+type CacheEntry = { ts: number; data: RetornoComercial };
+const cache = new Map<string, CacheEntry>();
+const TTL_MS = 15 * 60_000;
+const TIMEOUT_MS = 8_000;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === "number" && Number.isFinite(v) ? v : fallback;
+}
+
+function str(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v : null;
+}
+
+// Ponto único de tradução Core → contrato do dash. Defensivo a campos
+// ausentes. Ajustar aqui quando o Core confirmar o shape final.
+function parseCoreResponse(json: unknown): RetornoComercial | null {
+  if (!json || typeof json !== "object") return null;
+  const o = json as Record<string, unknown>;
+  const listaRaw = Array.isArray(o.lista_aguardando) ? o.lista_aguardando : [];
+  const lista_aguardando: LeadAguardando[] = listaRaw.map((r) => {
+    const x = (r ?? {}) as Record<string, unknown>;
+    return {
+      nome: str(x.nome),
+      telefone: str(x.telefone),
+      campanha: str(x.campanha),
+      agendado_em: str(x.agendado_em),
+    };
+  });
+  return {
+    janela_dias: num(o.janela_dias, 14),
+    sla_min: num(o.sla_min, 30),
+    agendados: num(o.agendados),
+    retornados: num(o.retornados),
+    aguardando: num(o.aguardando),
+    nao_localizados: num(o.nao_localizados),
+    dentro_sla: num(o.dentro_sla),
+    mediana_util_min: num(o.mediana_util_min),
+    lista_aguardando,
+  };
+}
+
+// Sample pra dev/preview visual sem depender do Core.
+// Ligar com MEMBER_DASHBOARD_RETORNO_COMERCIAL_MOCK=true.
+function mockData(): RetornoComercial {
+  return {
+    janela_dias: 14,
+    sla_min: 30,
+    agendados: 13,
+    retornados: 9,
+    aguardando: 3,
+    nao_localizados: 1,
+    dentro_sla: 7,
+    mediana_util_min: 22,
+    lista_aguardando: [
+      { nome: "Ana Souza", telefone: "(48) 99999-1234", campanha: "Lançamento Jurerê", agendado_em: "2026-07-05" },
+      { nome: "Carlos Lima", telefone: "(11) 98888-5678", campanha: "Meta — Cobertura", agendado_em: "2026-07-06" },
+      { nome: "Beatriz Rocha", telefone: "(21) 97777-4321", campanha: "Indicação", agendado_em: "2026-07-07" },
+    ],
+  };
+}
+
+export async function getRetornoComercial(
+  workspaceId: string,
+): Promise<RetornoComercial | null> {
+  if (process.env.MEMBER_DASHBOARD_RETORNO_COMERCIAL_MOCK === "true") {
+    return mockData();
+  }
+
+  const now = Date.now();
+  const hit = cache.get(workspaceId);
+  if (hit && now - hit.ts < TTL_MS) return hit.data;
+
+  const coreUrl = process.env.ATON_CORE_INTERNAL_URL;
+  const sharedSecret = process.env.INTERNAL_SHARED_SECRET;
+  if (!coreUrl || !sharedSecret) {
+    // Sem canal configurado → seção fica escondida (sem erro).
+    return null;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const url = `${coreUrl}/api/internal/retorno-comercial?workspace_id=${encodeURIComponent(workspaceId)}`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${sharedSecret}` },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.warn("[retorno-comercial] core !ok", { workspaceId, status: res.status });
+      return null;
+    }
+    const parsed = parseCoreResponse(await res.json());
+    if (!parsed) return null;
+    cache.set(workspaceId, { ts: now, data: parsed });
+    return parsed;
+  } catch (e) {
+    console.warn("[retorno-comercial] fetch falhou", {
+      workspaceId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}

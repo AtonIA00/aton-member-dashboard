@@ -20,6 +20,7 @@ import type { TabKey } from "@/lib/tabs";
 import { TonView } from "@/components/ton/TonView";
 import { AtonLogo } from "@/components/brand/AtonLogo";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { RetornoComercialSection } from "./RetornoComercialSection";
 
 type HmacParams = {
   workspace_id: string;
@@ -46,6 +47,8 @@ type Props = {
   tab: TabKey;
   /** Params HMAC do iframe original — repassados pro TonView (chat usa). */
   hmac: HmacParams;
+  /** Gate da seção "Retorno do time comercial" (flag global + toggle do assinante). */
+  retornoComercialEnabled: boolean;
 };
 
 export async function Dashboard({
@@ -62,6 +65,7 @@ export async function Dashboard({
   filters,
   tab,
   hmac,
+  retornoComercialEnabled,
 }: Props) {
   const tonAvailable = isTonEnabledForTier(tier);
   const isTonTab = tab === "ton" && tonAvailable
@@ -153,6 +157,8 @@ export async function Dashboard({
               periodKey={periodKey}
               customFrom={customFrom}
               customTo={customTo}
+              hmac={hmac}
+              retornoComercialEnabled={retornoComercialEnabled}
             />
           )
         )}
@@ -173,9 +179,19 @@ type DashboardContentProps = {
   periodKey: PeriodKey;
   customFrom?: string;
   customTo?: string;
+  hmac: HmacParams;
+  retornoComercialEnabled: boolean;
 };
 
-function DashboardContent({ data, workspaceName, periodKey, customFrom, customTo }: DashboardContentProps) {
+function DashboardContent({
+  data,
+  workspaceName,
+  periodKey,
+  customFrom,
+  customTo,
+  hmac,
+  retornoComercialEnabled,
+}: DashboardContentProps) {
   const range = resolvePeriod(periodKey, customFrom, customTo);
   const periodSummary = formatPeriodSummary(periodKey, range);
   const filtersActive = hasAnyFilter(data.filters);
@@ -201,6 +217,11 @@ function DashboardContent({ data, workspaceName, periodKey, customFrom, customTo
           deltas={data.deltas}
         />
       </div>
+
+      {/* Retorno do time comercial — janela própria (não segue os filtros do
+          dash), some sozinha se indisponível/desligada. Fica fora do ternário
+          de período vazio de propósito: é um snapshot "de agora". */}
+      <RetornoComercialSection enabled={retornoComercialEnabled} hmac={hmac} />
 
       {data.totalNoPeriodo === 0 ? (
         <EmptyState

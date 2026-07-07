@@ -8,6 +8,7 @@ export type AccessRow = {
   habilitado: boolean;
   expira_em: string | null; // ISO timestamp ou null (sem expiração)
   habilitado_em: string | null; // ISO timestamp da data em que CS liberou
+  mostrar_retorno_comercial: boolean | null; // toggle da seção Retorno (default true)
 };
 
 export type AccessGranted = {
@@ -21,6 +22,8 @@ export type AccessGranted = {
   /** Horas inteiras até expirar (arredondado pra cima). null = sem expiração.
    *  Usado pelo TierBadge na faixa <24h. */
   hoursUntilExpiry: number | null;
+  /** Toggle da seção "Retorno do time comercial" (default true). */
+  mostrarRetornoComercial: boolean;
 };
 export type AccessDenied = { granted: false };
 export type AccessResult = AccessGranted | AccessDenied;
@@ -40,7 +43,7 @@ export async function checkDashboardAccess(workspaceId: string): Promise<AccessR
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("wa_member_dashboard_access")
-    .select("tier, habilitado, expira_em, habilitado_em")
+    .select("tier, habilitado, expira_em, habilitado_em, mostrar_retorno_comercial")
     .eq("uchat_workspace_id", workspaceId)
     .eq("habilitado", true)
     .maybeSingle<AccessRow>();
@@ -85,5 +88,7 @@ export async function checkDashboardAccess(workspaceId: string): Promise<AccessR
     expiresAt,
     daysUntilExpiry,
     hoursUntilExpiry,
+    // Default true: rows antigas sem a coluna, ou null, contam como ligado.
+    mostrarRetornoComercial: data.mostrar_retorno_comercial !== false,
   };
 }
