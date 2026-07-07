@@ -14,6 +14,7 @@ export type PeriodKey =
   | "this_month"
   | "last_month"
   | "7d"
+  | "14d"
   | "30d"
   | "90d"
   | "custom";
@@ -25,6 +26,7 @@ export const PERIOD_LABEL: Record<PeriodKey, string> = {
   this_month: "Mês atual",
   last_month: "Mês passado",
   "7d": "Últimos 7 dias",
+  "14d": "Últimos 14 dias",
   "30d": "Últimos 30 dias",
   "90d": "Últimos 90 dias",
   custom: "Personalizado",
@@ -37,6 +39,7 @@ export const PERIOD_PRESETS: PeriodKey[] = [
   "this_month",
   "last_month",
   "7d",
+  "14d",
   "30d",
   "90d",
 ];
@@ -101,6 +104,11 @@ export function resolvePeriod(
     case "7d": {
       const d = new Date(now);
       d.setUTCDate(d.getUTCDate() - 6);
+      return { from: isoDay(d), to: today };
+    }
+    case "14d": {
+      const d = new Date(now);
+      d.setUTCDate(d.getUTCDate() - 13);
       return { from: isoDay(d), to: today };
     }
     case "30d": {
