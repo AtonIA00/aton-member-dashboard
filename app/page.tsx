@@ -7,6 +7,7 @@ import { UpsellScreen } from "@/components/UpsellScreen";
 import { Dashboard } from "@/components/dashboard/Dashboard";
 import { parseTab } from "@/lib/tabs";
 import { isRetornoComercialEnabled } from "@/lib/retorno-comercial/source";
+import { isLeadExcludeAllowed } from "@/lib/lead-exclusions";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -87,6 +88,7 @@ export default async function Page({
       tab={tab}
       hmac={hmacForClient}
       retornoComercialEnabled={isRetornoComercialEnabled(access)}
+      canExcludeLeads={isLeadExcludeAllowed(hmac.userId)}
     />
   );
 }

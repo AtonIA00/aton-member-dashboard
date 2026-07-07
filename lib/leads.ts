@@ -20,6 +20,7 @@ import {
   type MonthlyEvolutionPoint,
 } from "./charts";
 import { computeDelta, type Delta } from "./deltas";
+import { getExcludedLeadIds } from "./lead-exclusions";
 
 // Linha crua da terrace360_leads_atonhub — apenas as colunas que o dashboard
 // consome. Demais colunas (probabilidade_avanco, dia_hora_semana, cliente,
@@ -257,13 +258,17 @@ export async function getDashboardData(
     )}-${String(now.getUTCDate()).padStart(2, "0")}`,
   };
 
-  // Os 2 fetches são independentes — paralelizar.
-  const [baseExpanded, twelveMo] = await Promise.all([
+  // Os 2 fetches + a lista de exclusões são independentes — paralelizar.
+  const [baseExpanded, twelveMo, excludedIds] = await Promise.all([
     fetchBaseLeads(workspaceId, expanded),
     fetchBaseLeads(workspaceId, twelveMoRange),
+    getExcludedLeadIds(workspaceId),
   ]);
 
-  const base = baseExpanded.leads;
+  // Leads marcados como teste somem de TUDO (KPIs, funil, ads, charts, tabela,
+  // export, tools do TON). Filtro aplicado uma vez, antes de qualquer cálculo.
+  const base = baseExpanded.leads.filter((l) => !excludedIds.has(l.id));
+  const twelveMoLeads = twelveMo.leads.filter((l) => !excludedIds.has(l.id));
   const currentLeadsAll = leadsInRange(base, range);
   const previousLeadsAll = prev ? leadsInRange(base, prev) : [];
 
@@ -323,8 +328,8 @@ export async function getDashboardData(
     charts: {
       ...buildAllCharts(currentFiltered),
       // MonthlyEvolution: dos 12 meses, SEM filtros aplicados (trajetória
-      // do workspace inteiro — decisão M8 pendência B).
-      monthlyEvolution: buildMonthlyEvolution(twelveMo.leads),
+      // do workspace inteiro — decisão M8 pendência B). Já sem os leads de teste.
+      monthlyEvolution: buildMonthlyEvolution(twelveMoLeads),
     },
     leads: currentFiltered,
     fetchedAt: new Date().toISOString(),

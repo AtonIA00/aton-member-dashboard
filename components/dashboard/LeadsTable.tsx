@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { classify, GRUPO_CHIP, GRUPO_LABEL, type Grupo } from "@/lib/classify";
 import type { LeadRow } from "@/lib/leads";
 import {
@@ -8,6 +9,20 @@ import {
   exportLeadsToXlsx,
   type ExportMeta,
 } from "@/lib/export-leads";
+
+type HmacParams = {
+  workspace_id: string;
+  user_id: string;
+  timestamp: string;
+  signature: string;
+};
+
+type ExclusionRow = {
+  lead_id: number;
+  nome_snapshot: string | null;
+  telefone_snapshot: string | null;
+  created_at: string;
+};
 
 type Props = {
   leads: LeadRow[];
@@ -17,6 +32,10 @@ type Props = {
   periodLabel: string;
   /** Se há filtros aplicados — nota no arquivo exportado. */
   filtersActive: boolean;
+  /** Se o viewer (user_id) pode marcar leads como teste (allowlist Aton). */
+  canExclude: boolean;
+  /** Params HMAC pra autenticar as chamadas de exclusão. */
+  hmac: HmacParams;
 };
 
 const PAGE_SIZE = 50;
@@ -59,7 +78,15 @@ function fmtMql(mql: string | null): { label: string; cls: string } {
   };
 }
 
-export function LeadsTable({ leads, workspaceName, periodLabel, filtersActive }: Props) {
+export function LeadsTable({
+  leads,
+  workspaceName,
+  periodLabel,
+  filtersActive,
+  canExclude,
+  hmac,
+}: Props) {
+  const router = useRouter();
   const [page, setPage] = useState(0);
 
   // Reset de página se a lista encolher (ex: trocou de período).
@@ -77,10 +104,116 @@ export function LeadsTable({ leads, workspaceName, periodLabel, filtersActive }:
     return leads.slice(start, start + PAGE_SIZE);
   }, [leads, safePage]);
 
+  // ── Exclusão de leads de teste (só Aton — canExclude gateado no servidor) ──
+  // TODOS os hooks abaixo ficam ANTES do early return de leads vazios
+  // (Rules of Hooks — count de hooks constante entre renders).
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [undo, setUndo] = useState<{ leadId: number; nome: string } | null>(null);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [exclusions, setExclusions] = useState<ExclusionRow[]>([]);
+
+  const hmacQS = useMemo(() => {
+    const p = new URLSearchParams();
+    p.set("workspace_id", hmac.workspace_id);
+    p.set("user_id", hmac.user_id);
+    p.set("timestamp", hmac.timestamp);
+    p.set("signature", hmac.signature);
+    return p.toString();
+  }, [hmac]);
+
+  const refreshExclusions = useCallback(async () => {
+    if (!canExclude) return;
+    try {
+      const res = await fetch(`/api/leads/exclude?${hmacQS}`);
+      if (!res.ok) return;
+      const j = await res.json();
+      setExclusions(j.exclusions ?? []);
+    } catch {
+      /* silencioso — o botão de exclusão ainda funciona */
+    }
+  }, [canExclude, hmacQS]);
+
+  useEffect(() => {
+    refreshExclusions();
+  }, [refreshExclusions]);
+
+  const postExclude = useCallback(
+    async (action: "exclude" | "restore", lead: { id: number; nome?: string | null; telefone?: string | null }) => {
+      setBusyId(lead.id);
+      try {
+        const res = await fetch("/api/leads/exclude", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action,
+            lead_id: lead.id,
+            nome: lead.nome ?? undefined,
+            telefone: lead.telefone ?? undefined,
+            workspace_id: hmac.workspace_id,
+            user_id: hmac.user_id,
+            timestamp: hmac.timestamp,
+            signature: hmac.signature,
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        // Re-renderiza o dashboard (SSR) com o lead já dentro/fora das métricas.
+        router.refresh();
+        refreshExclusions();
+        return true;
+      } catch (e) {
+        console.error("[leads] exclude", e);
+        return false;
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [hmac, router, refreshExclusions],
+  );
+
+  async function handleExclude(lead: LeadRow) {
+    const ok = await postExclude("exclude", {
+      id: lead.id,
+      nome: lead.nome_lead,
+      telefone: fmtTelefone(lead.ddd_lead, lead.telefone),
+    });
+    if (ok) setUndo({ leadId: lead.id, nome: lead.nome_lead?.trim() || "Lead sem nome" });
+  }
+
+  async function handleRestore(leadId: number) {
+    const ok = await postExclude("restore", { id: leadId });
+    if (ok && undo?.leadId === leadId) setUndo(null);
+  }
+
+  // Auto-dismiss do "desfazer" após alguns segundos.
+  useEffect(() => {
+    if (!undo) return;
+    const t = setTimeout(() => setUndo(null), 7000);
+    return () => clearTimeout(t);
+  }, [undo]);
+
+  const excludedCount = exclusions.length;
+
   if (leads.length === 0) {
     return (
       <div className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color:var(--card)]/70 p-6 text-center text-sm text-[color:var(--muted-foreground)] backdrop-blur">
-        Nenhum lead no período selecionado.
+        <div>Nenhum lead no período selecionado.</div>
+        {canExclude && excludedCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setManageOpen(true)}
+            className="mt-3 text-[11px] font-medium text-[color:var(--muted-foreground)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--foreground)]"
+          >
+            {excludedCount} {excludedCount === 1 ? "lead marcado" : "leads marcados"} como teste · gerenciar
+          </button>
+        )}
+        {canExclude && manageOpen && (
+          <ManagePanel
+            exclusions={exclusions}
+            busyId={busyId}
+            onClose={() => setManageOpen(false)}
+            onRestore={handleRestore}
+          />
+        )}
       </div>
     );
   }
@@ -101,11 +234,38 @@ export function LeadsTable({ leads, workspaceName, periodLabel, filtersActive }:
             · página {safePage + 1} de {totalPages}
           </span>
         </span>
+        {canExclude && excludedCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setManageOpen((v) => !v)}
+            className="text-[11px] font-medium text-[color:var(--muted-foreground)] underline decoration-dotted underline-offset-2 transition-colors hover:text-[color:var(--foreground)]"
+            title="Ver e restaurar leads marcados como teste"
+          >
+            {excludedCount} {excludedCount === 1 ? "oculto" : "ocultos"} · gerenciar
+          </button>
+        )}
         <ExportMenu
           leads={leads}
           meta={{ workspaceName, periodLabel, filtersActive }}
         />
       </div>
+
+      {canExclude && undo && (
+        <UndoBar
+          nome={undo.nome}
+          busy={busyId === undo.leadId}
+          onUndo={() => handleRestore(undo.leadId)}
+        />
+      )}
+
+      {canExclude && manageOpen && (
+        <ManagePanel
+          exclusions={exclusions}
+          busyId={busyId}
+          onClose={() => setManageOpen(false)}
+          onRestore={handleRestore}
+        />
+      )}
 
       <div className="max-h-[640px] overflow-auto">
         <table className="w-full border-collapse text-sm">
@@ -118,6 +278,11 @@ export function LeadsTable({ leads, workspaceName, periodLabel, filtersActive }:
               <Th>Resumo</Th>
               <Th align="center">MQL</Th>
               <Th>Telefone</Th>
+              {canExclude && (
+                <th scope="col" className="w-10 px-2 py-3">
+                  <span className="sr-only">Ações</span>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -128,7 +293,7 @@ export function LeadsTable({ leads, workspaceName, periodLabel, filtersActive }:
               return (
                 <tr
                   key={l.id}
-                  className="border-t border-[color:var(--border)]/60 align-top transition-colors hover:bg-[color:var(--primary)]/5"
+                  className="group border-t border-[color:var(--border)]/60 align-top transition-colors hover:bg-[color:var(--primary)]/5"
                 >
                   <td className="whitespace-nowrap px-4 py-3 text-xs text-[color:var(--muted-foreground)] tabular-nums">
                     {fmtDate(l.data)}
@@ -170,6 +335,14 @@ export function LeadsTable({ leads, workspaceName, periodLabel, filtersActive }:
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-[color:var(--muted-foreground)]">
                     {fmtTelefone(l.ddd_lead, l.telefone)}
                   </td>
+                  {canExclude && (
+                    <td className="px-2 py-3 text-center align-middle">
+                      <ExcludeButton
+                        busy={busyId === l.id}
+                        onClick={() => handleExclude(l)}
+                      />
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -207,6 +380,120 @@ export function LeadsTable({ leads, workspaceName, periodLabel, filtersActive }:
             </PageBtn>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// Botão discreto por linha — marca o lead como teste (remove das métricas).
+function ExcludeButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy}
+      title="Marcar como teste (remove das métricas)"
+      aria-label="Marcar lead como teste"
+      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[color:var(--muted-foreground)]/45 opacity-60 transition-all hover:bg-[color:var(--destructive)]/10 hover:text-[color:var(--destructive)] group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {busy ? (
+        <span className="h-3 w-3 animate-spin rounded-full border-2 border-current/30 border-t-current" />
+      ) : (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+          <line x1="4" y1="22" x2="4" y2="15" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+// Barra de "desfazer" logo após marcar (proteção contra clique errado).
+function UndoBar({ nome, busy, onUndo }: { nome: string; busy: boolean; onUndo: () => void }) {
+  return (
+    <div className="flex items-center gap-3 border-b border-[color:var(--border)] bg-[color:var(--surface-2)]/60 px-6 py-2 text-[12px] text-[color:var(--muted-foreground)]">
+      <span>
+        <strong className="font-semibold text-[color:var(--foreground)]">{nome}</strong> marcado como teste — fora das métricas.
+      </span>
+      <button
+        type="button"
+        onClick={onUndo}
+        disabled={busy}
+        className="font-semibold text-[color:var(--primary)] underline underline-offset-2 hover:opacity-80 disabled:opacity-50"
+      >
+        {busy ? "desfazendo…" : "Desfazer"}
+      </button>
+    </div>
+  );
+}
+
+// Painel "gerenciar ocultos" — lista os leads marcados como teste + restaurar.
+function ManagePanel({
+  exclusions,
+  busyId,
+  onClose,
+  onRestore,
+}: {
+  exclusions: ExclusionRow[];
+  busyId: number | null;
+  onClose: () => void;
+  onRestore: (leadId: number) => void;
+}) {
+  return (
+    <div className="border-b border-[color:var(--border)] bg-[color:var(--surface-2)]/40 px-6 py-3">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">
+          Leads marcados como teste
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-auto text-[11px] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
+        >
+          fechar
+        </button>
+      </div>
+      {exclusions.length === 0 ? (
+        <div className="py-2 text-[12px] text-[color:var(--muted-foreground)]">
+          Nenhum lead marcado como teste.
+        </div>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {exclusions.map((e) => (
+            <li
+              key={e.lead_id}
+              className="flex items-center gap-3 rounded-md px-2 py-1.5 text-[12px] hover:bg-[color:var(--card)]/60"
+            >
+              <span className="min-w-0 flex-1 truncate text-[color:var(--foreground)]">
+                {e.nome_snapshot?.trim() || "Lead sem nome"}
+                {e.telefone_snapshot && (
+                  <span className="ml-2 font-mono text-[11px] text-[color:var(--muted-foreground)]">
+                    {e.telefone_snapshot}
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => onRestore(e.lead_id)}
+                disabled={busyId === e.lead_id}
+                className="flex-shrink-0 rounded border border-[color:var(--border)] px-2 py-0.5 text-[11px] font-medium text-[color:var(--foreground)] transition-colors hover:border-[color:var(--primary)]/40 hover:text-[color:var(--primary)] disabled:opacity-50"
+              >
+                {busyId === e.lead_id ? "…" : "Restaurar"}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

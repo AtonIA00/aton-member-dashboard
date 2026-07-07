@@ -49,6 +49,8 @@ type Props = {
   hmac: HmacParams;
   /** Gate da seção "Retorno do time comercial" (flag global + toggle do assinante). */
   retornoComercialEnabled: boolean;
+  /** Se o viewer pode marcar leads como teste (allowlist Aton). */
+  canExcludeLeads: boolean;
 };
 
 export async function Dashboard({
@@ -66,6 +68,7 @@ export async function Dashboard({
   tab,
   hmac,
   retornoComercialEnabled,
+  canExcludeLeads,
 }: Props) {
   const tonAvailable = isTonEnabledForTier(tier);
   const isTonTab = tab === "ton" && tonAvailable
@@ -159,6 +162,7 @@ export async function Dashboard({
               customTo={customTo}
               hmac={hmac}
               retornoComercialEnabled={retornoComercialEnabled}
+              canExcludeLeads={canExcludeLeads}
             />
           )
         )}
@@ -181,6 +185,7 @@ type DashboardContentProps = {
   customTo?: string;
   hmac: HmacParams;
   retornoComercialEnabled: boolean;
+  canExcludeLeads: boolean;
 };
 
 function DashboardContent({
@@ -191,6 +196,7 @@ function DashboardContent({
   customTo,
   hmac,
   retornoComercialEnabled,
+  canExcludeLeads,
 }: DashboardContentProps) {
   const range = resolvePeriod(periodKey, customFrom, customTo);
   const periodSummary = formatPeriodSummary(periodKey, range);
@@ -273,6 +279,8 @@ function DashboardContent({
               workspaceName={workspaceName}
               periodLabel={periodLabel}
               filtersActive={filtersActive}
+              canExclude={canExcludeLeads}
+              hmac={hmac}
             />
           </div>
         </>
