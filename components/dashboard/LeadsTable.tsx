@@ -1,10 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { classify, GRUPO_CHIP, type Grupo } from "@/lib/classify";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { classify, GRUPO_CHIP, GRUPO_LABEL, type Grupo } from "@/lib/classify";
 import type { LeadRow } from "@/lib/leads";
+import {
+  exportLeadsToCsv,
+  exportLeadsToXlsx,
+  type ExportMeta,
+} from "@/lib/export-leads";
 
-type Props = { leads: LeadRow[] };
+type Props = {
+  leads: LeadRow[];
+  /** Nome da workspace — vai no título do arquivo exportado. */
+  workspaceName: string;
+  /** Rótulo conciso do período (ex: "Últimos 7 dias") — vai no subtítulo. */
+  periodLabel: string;
+  /** Se há filtros aplicados — nota no arquivo exportado. */
+  filtersActive: boolean;
+};
 
 const PAGE_SIZE = 50;
 
@@ -46,7 +59,7 @@ function fmtMql(mql: string | null): { label: string; cls: string } {
   };
 }
 
-export function LeadsTable({ leads }: Props) {
+export function LeadsTable({ leads, workspaceName, periodLabel, filtersActive }: Props) {
   const [page, setPage] = useState(0);
 
   // Reset de página se a lista encolher (ex: trocou de período).
@@ -88,6 +101,10 @@ export function LeadsTable({ leads }: Props) {
             · página {safePage + 1} de {totalPages}
           </span>
         </span>
+        <ExportMenu
+          leads={leads}
+          meta={{ workspaceName, periodLabel, filtersActive }}
+        />
       </div>
 
       <div className="max-h-[640px] overflow-auto">
@@ -132,7 +149,7 @@ export function LeadsTable({ leads }: Props) {
                       }}
                       title={l.etapa_funil ?? ""}
                     >
-                      {g}
+                      {GRUPO_LABEL[g]}
                     </span>
                   </td>
                   <td className="max-w-[280px] truncate px-4 py-3 text-xs text-[color:var(--muted-foreground)]">
@@ -192,6 +209,162 @@ export function LeadsTable({ leads }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+function ExportMenu({
+  leads,
+  meta,
+}: {
+  leads: LeadRow[];
+  meta: Omit<ExportMeta, "exportedAt">;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<null | "xlsx" | "csv">(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Fecha ao clicar fora ou apertar Esc.
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  async function runXlsx() {
+    setBusy("xlsx");
+    try {
+      await exportLeadsToXlsx(leads, { ...meta, exportedAt: new Date() });
+      setOpen(false);
+    } catch (e) {
+      console.error("[export] xlsx falhou", e);
+      alert("Não foi possível gerar o Excel agora. Tente novamente.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function runCsv() {
+    setBusy("csv");
+    try {
+      exportLeadsToCsv(leads, { ...meta, exportedAt: new Date() });
+      setOpen(false);
+    } catch (e) {
+      console.error("[export] csv falhou", e);
+      alert("Não foi possível gerar o CSV agora. Tente novamente.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div ref={ref} className="relative ml-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={busy !== null}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex items-center gap-1.5 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-[color:var(--foreground)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[color:var(--aton-blue)]/40 hover:text-[color:var(--aton-blue)] hover:shadow-md active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {busy ? (
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[color:var(--muted-foreground)]/30 border-t-[color:var(--aton-blue)]" />
+        ) : (
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+        )}
+        {busy ? "Gerando…" : "Exportar"}
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-20 mt-1.5 w-60 overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--popover)] shadow-xl"
+        >
+          <ExportItem
+            title="Excel (.xlsx)"
+            subtitle="Formatado, pronto pra visualizar"
+            onClick={runXlsx}
+            disabled={busy !== null}
+            accent
+          />
+          <div className="h-px bg-[color:var(--border)]" />
+          <ExportItem
+            title="CSV (.csv)"
+            subtitle="Dados crus, pra reimportar"
+            onClick={runCsv}
+            disabled={busy !== null}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExportItem({
+  title,
+  subtitle,
+  onClick,
+  disabled,
+  accent,
+}: {
+  title: string;
+  subtitle: string;
+  onClick: () => void;
+  disabled?: boolean;
+  accent?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-[color:var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <span
+        className={
+          "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-[10px] font-bold " +
+          (accent
+            ? "bg-[color:var(--aton-blue)]/12 text-[color:var(--aton-blue)]"
+            : "bg-[color:var(--muted)] text-[color:var(--muted-foreground)]")
+        }
+        aria-hidden
+      >
+        {accent ? "XLS" : "CSV"}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-xs font-semibold text-[color:var(--foreground)]">
+          {title}
+        </span>
+        <span className="block truncate text-[10px] text-[color:var(--muted-foreground)]">
+          {subtitle}
+        </span>
+      </span>
+    </button>
   );
 }
 

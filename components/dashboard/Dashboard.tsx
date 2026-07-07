@@ -149,6 +149,7 @@ export async function Dashboard({
           dashboardDataPromise && (
             <DashboardContent
               data={await dashboardDataPromise}
+              workspaceName={workspaceName}
               periodKey={periodKey}
               customFrom={customFrom}
               customTo={customTo}
@@ -168,15 +169,22 @@ export async function Dashboard({
 
 type DashboardContentProps = {
   data: Awaited<ReturnType<typeof getDashboardData>>;
+  workspaceName: string;
   periodKey: PeriodKey;
   customFrom?: string;
   customTo?: string;
 };
 
-function DashboardContent({ data, periodKey, customFrom, customTo }: DashboardContentProps) {
+function DashboardContent({ data, workspaceName, periodKey, customFrom, customTo }: DashboardContentProps) {
   const range = resolvePeriod(periodKey, customFrom, customTo);
   const periodSummary = formatPeriodSummary(periodKey, range);
   const filtersActive = hasAnyFilter(data.filters);
+
+  // Rótulo conciso do período pro arquivo exportado (título/nome).
+  const periodLabel =
+    periodKey === "custom" && range.from && range.to
+      ? `${fmtBr(range.from)} a ${fmtBr(range.to)}`
+      : PERIOD_LABEL[periodKey];
 
   return (
     <>
@@ -239,7 +247,12 @@ function DashboardContent({ data, periodKey, customFrom, customTo }: DashboardCo
           </section>
 
           <div className="mt-8">
-            <LeadsTable leads={data.leads} />
+            <LeadsTable
+              leads={data.leads}
+              workspaceName={workspaceName}
+              periodLabel={periodLabel}
+              filtersActive={filtersActive}
+            />
           </div>
         </>
       )}
