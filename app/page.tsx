@@ -49,7 +49,7 @@ export default async function Page({
 
   const workspaceName = firstString(sp.workspace_name) ?? "";
 
-  const access = await checkDashboardAccess(hmac.workspaceId);
+  const access = await checkDashboardAccess(hmac.workspaceId, hmac.userId);
   if (!access.granted) {
     return <UpsellScreen workspaceName={workspaceName || undefined} />;
   }
@@ -89,6 +89,7 @@ export default async function Page({
       hmac={hmacForClient}
       retornoComercialEnabled={isRetornoComercialEnabled(access)}
       canExcludeLeads={isLeadExcludeAllowed(hmac.userId)}
+      adminView={access.superadminBypass}
     />
   );
 }

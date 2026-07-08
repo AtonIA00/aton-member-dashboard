@@ -23,7 +23,7 @@ async function authorize(
   const hmac = validateUchatSignature(params, { maxAgeSeconds: MAX_AGE_SECONDS });
   if (!hmac.ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const access = await checkDashboardAccess(hmac.workspaceId);
+  const access = await checkDashboardAccess(hmac.workspaceId, hmac.userId);
   if (!access.granted) return NextResponse.json({ error: "no_access" }, { status: 403 });
 
   if (!isLeadExcludeAllowed(hmac.userId)) {

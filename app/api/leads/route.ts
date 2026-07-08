@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const access = await checkDashboardAccess(hmac.workspaceId);
+  const access = await checkDashboardAccess(hmac.workspaceId, hmac.userId);
   if (!access.granted) {
     return NextResponse.json({ error: "no_access" }, { status: 403 });
   }

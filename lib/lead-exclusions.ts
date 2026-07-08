@@ -1,5 +1,6 @@
 import "server-only";
 import { getSupabaseAdmin } from "./supabase/server";
+import { isSuperAdmin } from "./access";
 
 // Exclusão "soft" de leads de teste (wa_lead_exclusions). O agregador filtra
 // estes lead_id antes de calcular tudo — some das métricas/charts/tabela/
@@ -30,6 +31,8 @@ function allowlist(): Set<string> {
 
 export function isLeadExcludeAllowed(userId: string | null | undefined): boolean {
   if (!userId) return false;
+  // Super-admin herda o poder de excluir (superset de "ver-tudo").
+  if (isSuperAdmin(userId)) return true;
   const list = allowlist();
   return list.size > 0 && list.has(String(userId));
 }

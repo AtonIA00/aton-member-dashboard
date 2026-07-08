@@ -24,7 +24,39 @@ export type AccessGranted = {
   hoursUntilExpiry: number | null;
   /** Toggle da seção "Retorno do time comercial" (default true). */
   mostrarRetornoComercial: boolean;
+  /** true quando o acesso foi concedido via bypass de super-admin (o workspace
+   *  não está liberado, mas o viewer é Aton). A UI mostra um indicador. */
+  superadminBypass: boolean;
 };
+
+/**
+ * Super-admins da Aton (allowlist por env, CSV de user_ids Uchat). Concede:
+ *   1. Ver QUALQUER workspace, mesmo não liberado (bypass do checkDashboardAccess).
+ *   2. Marcar leads como teste (herdado em lib/lead-exclusions).
+ * Vazio = ninguém (sobe dark). ⚠️ Dá leitura de PII de TODOS os assinantes —
+ * só user_ids 100% confiáveis.
+ */
+export function isSuperAdmin(userId: string | null | undefined): boolean {
+  if (!userId) return false;
+  const raw = process.env.MEMBER_DASHBOARD_SUPERADMIN_ALLOWLIST ?? "";
+  const set = new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+  return set.size > 0 && set.has(String(userId));
+}
+
+// Grant sintético pra super-admin ver workspace não liberado: enterprise
+// (acesso total, inclusive TON), sem datas de expiração.
+function superadminGrant(): AccessGranted {
+  return {
+    granted: true,
+    tier: "enterprise",
+    habilitadoAt: null,
+    expiresAt: null,
+    daysUntilExpiry: null,
+    hoursUntilExpiry: null,
+    mostrarRetornoComercial: true,
+    superadminBypass: true,
+  };
+}
 export type AccessDenied = { granted: false };
 export type AccessResult = AccessGranted | AccessDenied;
 
@@ -38,8 +70,19 @@ export type AccessResult = AccessGranted | AccessDenied;
  *     AND (expira_em IS NULL OR expira_em > now())
  *
  * Falha silenciosa em qualquer erro de banco — retorna `granted: false`.
+ *
+ * `viewerUserId` (do HMAC): se for super-admin Aton, qualquer caminho que
+ * NEGARIA acesso (sem linha, desabilitado, expirado, erro de banco) vira um
+ * grant sintético enterprise. Assim o super-admin vê qualquer workspace.
  */
-export async function checkDashboardAccess(workspaceId: string): Promise<AccessResult> {
+export async function checkDashboardAccess(
+  workspaceId: string,
+  viewerUserId?: string | null,
+): Promise<AccessResult> {
+  const superadmin = isSuperAdmin(viewerUserId);
+  const denyOrBypass = (): AccessResult =>
+    superadmin ? superadminGrant() : { granted: false };
+
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("wa_member_dashboard_access")
@@ -54,10 +97,10 @@ export async function checkDashboardAccess(workspaceId: string): Promise<AccessR
       code: error.code,
       message: error.message,
     });
-    return { granted: false };
+    return denyOrBypass();
   }
   if (!data) {
-    return { granted: false };
+    return denyOrBypass();
   }
 
   // habilitado_em: pode ser null em rows antigas — defensivo.
@@ -74,7 +117,7 @@ export async function checkDashboardAccess(workspaceId: string): Promise<AccessR
   if (data.expira_em) {
     expiresAt = new Date(data.expira_em);
     if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
-      return { granted: false };
+      return denyOrBypass();
     }
     const msLeft = expiresAt.getTime() - Date.now();
     daysUntilExpiry = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
@@ -90,5 +133,6 @@ export async function checkDashboardAccess(workspaceId: string): Promise<AccessR
     hoursUntilExpiry,
     // Default true: rows antigas sem a coluna, ou null, contam como ligado.
     mostrarRetornoComercial: data.mostrar_retorno_comercial !== false,
+    superadminBypass: false,
   };
 }

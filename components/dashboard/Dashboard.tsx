@@ -51,6 +51,8 @@ type Props = {
   retornoComercialEnabled: boolean;
   /** Se o viewer pode marcar leads como teste (allowlist Aton). */
   canExcludeLeads: boolean;
+  /** true = acesso via bypass de super-admin (workspace não liberado). */
+  adminView: boolean;
 };
 
 export async function Dashboard({
@@ -69,6 +71,7 @@ export async function Dashboard({
   hmac,
   retornoComercialEnabled,
   canExcludeLeads,
+  adminView,
 }: Props) {
   const tonAvailable = isTonEnabledForTier(tier);
   const isTonTab = tab === "ton" && tonAvailable
@@ -132,6 +135,17 @@ export async function Dashboard({
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            {/* Indicador de bypass: workspace não liberado, visível só via
+                super-admin. Deixa claro que não é uma visão de assinante real. */}
+            {adminView && (
+              <span
+                title="Acesso via super-admin (workspace não liberado)"
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#f59e0b]/40 bg-[#f59e0b]/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-amber-700 dark:text-[#f59e0b]"
+              >
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-current" />
+                Admin
+              </span>
+            )}
             {/* PeriodPicker só faz sentido na aba Dashboard */}
             {!isTonTab && <PeriodPicker />}
             <TierBadge

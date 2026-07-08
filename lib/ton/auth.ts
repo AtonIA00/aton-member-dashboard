@@ -45,7 +45,7 @@ export async function authenticateTonRequest(
     return { ok: false, status: 401, message: "unauthorized" };
   }
 
-  const access = await checkDashboardAccess(hmac.workspaceId);
+  const access = await checkDashboardAccess(hmac.workspaceId, hmac.userId);
   if (!access.granted) {
     return { ok: false, status: 403, message: "no_access" };
   }

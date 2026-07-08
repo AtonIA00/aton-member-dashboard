@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const access = await checkDashboardAccess(hmac.workspaceId);
+  const access = await checkDashboardAccess(hmac.workspaceId, hmac.userId);
   if (!access.granted || !isRetornoComercialEnabled(access)) {
     // Desligado (flag/toggle) ou sem acesso → seção some. 204 sem corpo.
     return new NextResponse(null, { status: 204 });
