@@ -158,10 +158,11 @@ export type TrisulDashboardData = {
 // ── Cores (paleta Aton) ──────────────────────────────────────────────────────
 const STATUS_COLORS: Record<string, string> = {
   Confirmados: "#10b981",
+  "Em andamento": "#0057ff",
   "Não atua no mercado": "#6b7280",
   "Não atua com parcerias": "#f59e0b",
+  "Negativa explícita": "#dc2626",
   "Sem interação": "#94a3b8",
-  "Em andamento": "#0057ff",
 };
 const CANAL_COLORS: Record<string, string> = {
   Ligação: "#0057ff",
@@ -362,14 +363,17 @@ export async function getTrisulDashboardData(
   // Série diária (disparos x respostas), preenchendo lacunas entre min e max.
   const daily = buildDaily(current);
 
-  // Consolidado por status (5 buckets que a view entrega).
+  // Consolidado por status — 6 categorias: os 5 resultados do enum + em_andamento.
+  // "Negativa explícita" é a coluna `encerramentos` da view (count de
+  // resultado='negativa_explicita' — o nome da coluna despistava).
   const c = kpis;
   const status: StatusSlice[] = [
     { name: "Confirmados", value: c.ativosConfirmados },
+    { name: "Em andamento", value: c.emAndamento },
     { name: "Não atua no mercado", value: c.naoAtuaMercado },
     { name: "Não atua com parcerias", value: c.naoAtuaParcerias },
+    { name: "Negativa explícita", value: c.encerramentos },
     { name: "Sem interação", value: c.semInteracao },
-    { name: "Em andamento", value: c.emAndamento },
   ].map((s) => ({ ...s, color: STATUS_COLORS[s.name] ?? "#6b7280" }));
 
   // Efetividade do follow-up: qual toque trouxe a resposta.
