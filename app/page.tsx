@@ -8,6 +8,8 @@ import { Dashboard } from "@/components/dashboard/Dashboard";
 import { parseTab } from "@/lib/tabs";
 import { isRetornoComercialEnabled } from "@/lib/retorno-comercial/source";
 import { isLeadExcludeAllowed } from "@/lib/lead-exclusions";
+import { isTrisulWorkspace } from "@/lib/trisul";
+import { TrisulView } from "@/components/trisul/TrisulView";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -71,6 +73,26 @@ export default async function Page({
     user_name: firstString(sp.user_name),
     workspace_name: workspaceName || undefined,
   };
+
+  // Trisul Parcerias tem fluxo outbound próprio e tela dedicada (atrás da flag
+  // MEMBER_DASHBOARD_TRISUL_ENABLED). Não é workspace terrace360 — renderiza a
+  // TrisulView em vez do Dashboard padrão. Gate de acesso já passou acima.
+  if (isTrisulWorkspace(hmac.workspaceId)) {
+    return (
+      <TrisulView
+        workspaceName={workspaceName || "Trisul Parcerias"}
+        periodKey={periodKey}
+        customFrom={customFrom}
+        customTo={customTo}
+        filters={{
+          campanha: firstString(sp.campanha),
+          coordenador: firstString(sp.coordenador),
+        }}
+        hmac={hmacForClient}
+        adminView={access.superadminBypass}
+      />
+    );
+  }
 
   return (
     <Dashboard
