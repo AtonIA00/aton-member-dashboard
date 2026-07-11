@@ -12,7 +12,7 @@
 export type DeltaDirection = "up" | "down" | "stable" | "new";
 export type DeltaClassification = "positive" | "negative" | "neutral";
 export type DeltaKind = "count" | "percent";
-export type DeltaOrientation = "higher_is_better" | "neutral";
+export type DeltaOrientation = "higher_is_better" | "lower_is_better" | "neutral";
 
 export type Delta = {
   direction: DeltaDirection;
@@ -118,6 +118,9 @@ export function computeDelta(
     classification = "neutral";
   } else if (opts.orientation === "neutral") {
     classification = "neutral";
+  } else if (opts.orientation === "lower_is_better") {
+    // Ex: taxa de falha de envio — cair é bom (verde), subir é ruim (vermelho).
+    classification = direction === "down" ? "positive" : "negative";
   } else {
     // higher_is_better
     classification = direction === "up" ? "positive" : "negative";

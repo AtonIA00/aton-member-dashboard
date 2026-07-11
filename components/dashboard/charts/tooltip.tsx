@@ -16,22 +16,39 @@ type AnyTooltip = TooltipProps<number, string> & {
     name?: string;
     value?: number;
     color?: string;
+    /** Recharts injeta `percent` (0..1) nas fatias de Pie — usamos direto. */
+    percent?: number;
     payload?: Record<string, unknown>;
   }>;
   label?: string | number;
   /** Override do label exibido (ex: data formatada DD/MM). */
   labelFormatter?: (label: string | number) => string;
-  /** Quando true, exibe a % calculada sobre o total dos slices. */
+  /** Quando true, exibe a % da fatia. */
   showPercent?: boolean;
+  /** Total do universo pra calcular a % (charts de BARRA passam explícito —
+   *  no Pie o recharts já dá `percent` por fatia). */
+  percentTotal?: number;
 };
 
 export function AtonTooltip(props: AnyTooltip) {
-  const { active, payload, label, labelFormatter, showPercent } = props;
+  const { active, payload, label, labelFormatter, showPercent, percentTotal } = props;
   if (!active || !payload || payload.length === 0) return null;
 
+  // Base pra % quando não vier o `percent` do recharts (caso Pie): usa o total
+  // explícito passado pelo chart de barra, senão a soma do payload (fallback).
+  // ⚠️ Em Pie, o payload traz só a fatia sob o cursor — somar o payload daria
+  // sempre 100% (bug antigo). Por isso preferimos p.percent.
   const total = showPercent
-    ? payload.reduce((s, p) => s + (Number(p.value) || 0), 0)
+    ? (typeof percentTotal === "number" && percentTotal > 0
+        ? percentTotal
+        : payload.reduce((s, p) => s + (Number(p.value) || 0), 0))
     : 0;
+
+  function slicePct(p: { value?: number; percent?: number }): number {
+    if (typeof p.percent === "number" && Number.isFinite(p.percent)) return p.percent * 100;
+    const v = Number(p.value) || 0;
+    return total > 0 ? (v / total) * 100 : 0;
+  }
 
   const displayLabel = label != null
     ? labelFormatter
@@ -52,7 +69,8 @@ export function AtonTooltip(props: AnyTooltip) {
       <ul className="flex flex-col gap-1">
         {payload.map((p, i) => {
           const v = Number(p.value) || 0;
-          const pct = total > 0 ? (v / total) * 100 : 0;
+          const pct = slicePct(p);
+          const showPct = showPercent && (typeof p.percent === "number" || total > 0);
           return (
             <li key={i} className="flex items-center gap-2">
               <span
@@ -65,7 +83,7 @@ export function AtonTooltip(props: AnyTooltip) {
               </span>
               <span className="ml-auto font-semibold text-[color:var(--foreground)] tabular-nums">
                 {v.toLocaleString("pt-BR")}
-                {showPercent && total > 0 && (
+                {showPct && (
                   <span className="ml-1 text-[color:var(--muted-foreground)]">
                     ({pct.toFixed(1).replace(".", ",")}%)
                   </span>

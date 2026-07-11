@@ -106,6 +106,7 @@ export type TrisulKpis = TrisulCounts & {
 export type TrisulDeltas = {
   disparos: Delta;
   taxaResposta: Delta;
+  taxaFalha: Delta;
   taxaAtivos: Delta;
   conversao: Delta;
   pctAtuam: Delta;
@@ -353,6 +354,7 @@ export async function getTrisulDashboardData(
     ? {
         disparos: computeDelta(kpis.disparos, kpisPrevious.disparos, { kind: "count", orientation: "higher_is_better" }),
         taxaResposta: computeDelta(kpis.taxaResposta, kpisPrevious.taxaResposta, { kind: "percent", orientation: "higher_is_better" }),
+        taxaFalha: computeDelta(kpis.taxaFalha, kpisPrevious.taxaFalha, { kind: "percent", orientation: "lower_is_better" }),
         taxaAtivos: computeDelta(kpis.taxaAtivos, kpisPrevious.taxaAtivos, { kind: "percent", orientation: "higher_is_better" }),
         conversao: computeDelta(kpis.conversao, kpisPrevious.conversao, { kind: "percent", orientation: "higher_is_better" }),
         pctAtuam: computeDelta(kpis.pctAtuam, kpisPrevious.pctAtuam, { kind: "percent", orientation: "higher_is_better" }),

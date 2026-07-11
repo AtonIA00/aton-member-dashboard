@@ -47,7 +47,7 @@ export function MqlDonutChart({ data }: { data: MqlDonutSlice[] }) {
                 <Cell key={i} fill={slice.color} />
               ))}
             </Pie>
-            <Tooltip content={<AtonTooltip showPercent />} />
+            <Tooltip content={<AtonTooltip showPercent percentTotal={total} />} />
             <Legend
               iconType="circle"
               iconSize={8}

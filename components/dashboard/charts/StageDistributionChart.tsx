@@ -76,7 +76,7 @@ export function StageDistributionChart({ data }: { data: StageDistributionPoint[
               width={92}
             />
             <Tooltip
-              content={<AtonTooltip showPercent />}
+              content={<AtonTooltip showPercent percentTotal={total} />}
               cursor={{ fill: "rgba(0,87,255,0.08)" }}
             />
             <Bar

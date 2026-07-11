@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TrisulAtendimento } from "@/lib/trisul";
 import { exportTrisulCsv, exportTrisulXlsx, type TrisulExportMeta } from "@/lib/export-trisul";
+import { useTableDrilldown, type DrilldownField } from "@/lib/use-table-drilldown";
 
 type Props = {
   atendimentos: TrisulAtendimento[];
@@ -11,6 +12,38 @@ type Props = {
 };
 
 const PAGE_SIZE = 50;
+
+// Filtro local da tabela (drill-down) — dataset inteiro, antes da paginação.
+const TRISUL_TABLE_FIELDS: DrilldownField<TrisulAtendimento>[] = [
+  {
+    key: "resultado",
+    label: "Resultado",
+    allLabel: "Todos",
+    get: (a) => (a.resultado && a.resultado.trim() ? a.resultado : "em_andamento"),
+    options: [
+      { value: "confirmado_atualizado", label: "Confirmado/Ativo" },
+      { value: "nao_atua_mercado", label: "Não atua no mercado" },
+      { value: "nao_atua_parcerias", label: "Não atua com parcerias" },
+      { value: "negativa_explicita", label: "Negativa explícita" },
+      { value: "sem_interacao", label: "Sem interação" },
+      { value: "em_andamento", label: "Em andamento" },
+    ],
+  },
+  { key: "campanha", label: "Campanha", allLabel: "Todas", get: (a) => a.campanha ?? "" },
+  { key: "coordenador", label: "Coordenador", allLabel: "Todos", get: (a) => a.coordenador_nome ?? "" },
+  {
+    key: "fup",
+    label: "FUP",
+    allLabel: "Todos",
+    get: (a) => String(a.tentativas_fup ?? 0),
+    options: [
+      { value: "0", label: "0 follow-ups" },
+      { value: "1", label: "1 follow-up" },
+      { value: "2", label: "2 follow-ups" },
+      { value: "3", label: "3 follow-ups" },
+    ],
+  },
+];
 
 function fmtDateTime(iso: string | null): string {
   if (!iso) return "—";
@@ -35,10 +68,12 @@ function resultadoChip(r: string | null, convertido: boolean | null): { label: s
 }
 
 export function TrisulTable({ atendimentos, periodLabel, filtersActive }: Props) {
+  // Filtro local (drill-down) sobre o dataset inteiro, ANTES da paginação.
+  const { filtered, bar } = useTableDrilldown(atendimentos, TRISUL_TABLE_FIELDS);
   const [page, setPage] = useState(0);
-  const totalPages = useMemo(() => Math.max(1, Math.ceil(atendimentos.length / PAGE_SIZE)), [atendimentos.length]);
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)), [filtered.length]);
   const safePage = Math.min(page, totalPages - 1);
-  const slice = useMemo(() => atendimentos.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE), [atendimentos, safePage]);
+  const slice = useMemo(() => filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE), [filtered, safePage]);
 
   if (atendimentos.length === 0) {
     return (
@@ -56,13 +91,24 @@ export function TrisulTable({ atendimentos, periodLabel, filtersActive }: Props)
           Atendimentos
         </h2>
         <span className="ml-auto text-[11px] text-[color:var(--muted-foreground)]/70">
-          {atendimentos.length.toLocaleString("pt-BR")} no total
+          {filtered.length.toLocaleString("pt-BR")}
+          {filtered.length !== atendimentos.length
+            ? ` de ${atendimentos.length.toLocaleString("pt-BR")}`
+            : " no total"}
           <span className="ml-2 opacity-60">· página {safePage + 1} de {totalPages}</span>
         </span>
-        <ExportMenu atendimentos={atendimentos} meta={{ periodLabel, filtersActive }} />
+        <ExportMenu atendimentos={filtered} meta={{ periodLabel, filtersActive: filtersActive || filtered.length !== atendimentos.length }} />
       </div>
 
-      <div className="max-h-[640px] overflow-auto">
+      {bar}
+
+      {filtered.length === 0 ? (
+        <div className="px-6 py-8 text-center text-sm text-[color:var(--muted-foreground)]">
+          Nenhum atendimento bate com os filtros da lista.
+        </div>
+      ) : (
+        <>
+          <div className="max-h-[640px] overflow-auto">
         <table className="w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-[color:var(--card)]">
             <tr>
@@ -106,19 +152,21 @@ export function TrisulTable({ atendimentos, periodLabel, filtersActive }: Props)
         </table>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between gap-3 border-t border-[color:var(--border)] px-6 py-3 text-xs text-[color:var(--muted-foreground)]">
-          <span className="tabular-nums">
-            Mostrando {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, atendimentos.length)} de {atendimentos.length.toLocaleString("pt-BR")}
-          </span>
-          <div className="flex items-center gap-2">
-            <PageBtn disabled={safePage === 0} onClick={() => setPage(0)}>«</PageBtn>
-            <PageBtn disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>Anterior</PageBtn>
-            <span className="px-2 tabular-nums">{safePage + 1} / {totalPages}</span>
-            <PageBtn disabled={safePage >= totalPages - 1} onClick={() => setPage(safePage + 1)}>Próxima</PageBtn>
-            <PageBtn disabled={safePage >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>»</PageBtn>
-          </div>
-        </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between gap-3 border-t border-[color:var(--border)] px-6 py-3 text-xs text-[color:var(--muted-foreground)]">
+              <span className="tabular-nums">
+                Mostrando {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} de {filtered.length.toLocaleString("pt-BR")}
+              </span>
+              <div className="flex items-center gap-2">
+                <PageBtn disabled={safePage === 0} onClick={() => setPage(0)}>«</PageBtn>
+                <PageBtn disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>Anterior</PageBtn>
+                <span className="px-2 tabular-nums">{safePage + 1} / {totalPages}</span>
+                <PageBtn disabled={safePage >= totalPages - 1} onClick={() => setPage(safePage + 1)}>Próxima</PageBtn>
+                <PageBtn disabled={safePage >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>»</PageBtn>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

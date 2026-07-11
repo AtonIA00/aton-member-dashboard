@@ -88,12 +88,20 @@ export function TrisulKpiRow({ kpis, kpisPrevious, deltas }: Props) {
       accent: "neutral",
       delta: deltas?.pctContatoCoord,
     },
+    {
+      label: "Taxa de falha de envio",
+      value: pct(kpis.taxaFalha),
+      valuePrevious: kpisPrevious ? pct(kpisPrevious.taxaFalha) : undefined,
+      sub: `${int(kpis.falhasEnvio)} de ${int(kpis.disparos)} envios`,
+      accent: "amber",
+      delta: deltas?.taxaFalha,
+    },
   ];
 
   return (
     <section
       aria-label="Indicadores principais"
-      className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6"
+      className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7"
     >
       {cards.map((c) => (
         <div

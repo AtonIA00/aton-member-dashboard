@@ -9,6 +9,7 @@ import {
   exportLeadsToXlsx,
   type ExportMeta,
 } from "@/lib/export-leads";
+import { useTableDrilldown, type DrilldownField } from "@/lib/use-table-drilldown";
 
 type HmacParams = {
   workspace_id: string;
@@ -78,6 +79,32 @@ function fmtMql(mql: string | null): { label: string; cls: string } {
   };
 }
 
+// Filtro local da tabela (drill-down). Etapa usa o label de exibição
+// ("Convertido" etc.); MQL normaliza Sim/Não/Sem MQL; campanha auto-derivada.
+const LEADS_TABLE_FIELDS: DrilldownField<LeadRow>[] = [
+  {
+    key: "etapa",
+    label: "Etapa",
+    allLabel: "Todas",
+    get: (l) => GRUPO_LABEL[classify(l.etapa_funil)],
+  },
+  {
+    key: "mql",
+    label: "MQL",
+    allLabel: "Todos",
+    get: (l) => {
+      const v = (l.mql ?? "").toLowerCase().trim();
+      return v === "sim" ? "Sim" : v === "não" || v === "nao" ? "Não" : "Sem MQL";
+    },
+    options: [
+      { value: "Sim", label: "MQL Sim" },
+      { value: "Não", label: "MQL Não" },
+      { value: "Sem MQL", label: "Sem MQL" },
+    ],
+  },
+  { key: "campanha", label: "Campanha", allLabel: "Todas", get: (l) => l.nome_campanha ?? "" },
+];
+
 export function LeadsTable({
   leads,
   workspaceName,
@@ -87,22 +114,27 @@ export function LeadsTable({
   hmac,
 }: Props) {
   const router = useRouter();
+
+  // Filtro local (drill-down) da lista — dataset inteiro, antes da paginação.
+  // Padrão do repo pra tabelas de detalhe; complementar ao FilterBar global
+  // (que filtra o dashboard todo server-side). Este só afeta a lista.
+  const { filtered, bar } = useTableDrilldown(leads, LEADS_TABLE_FIELDS);
+
   const [page, setPage] = useState(0);
 
-  // Reset de página se a lista encolher (ex: trocou de período).
-  // useMemo só pra fixar a referência estável.
+  // Reset de página se a lista encolher (troca de período OU filtro local).
   const totalPages = useMemo(
-    () => Math.max(1, Math.ceil(leads.length / PAGE_SIZE)),
-    [leads.length],
+    () => Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)),
+    [filtered.length],
   );
 
-  // Clamp na página atual quando o set de leads muda.
+  // Clamp na página atual quando o set muda.
   const safePage = Math.min(page, totalPages - 1);
 
   const slice = useMemo(() => {
     const start = safePage * PAGE_SIZE;
-    return leads.slice(start, start + PAGE_SIZE);
-  }, [leads, safePage]);
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, safePage]);
 
   // ── Exclusão de leads de teste (só Aton — canExclude gateado no servidor) ──
   // TODOS os hooks abaixo ficam ANTES do early return de leads vazios
@@ -229,7 +261,10 @@ export function LeadsTable({
           Leads detalhados
         </h2>
         <span className="ml-auto text-[11px] text-[color:var(--muted-foreground)]/70">
-          {leads.length.toLocaleString("pt-BR")} no total
+          {filtered.length.toLocaleString("pt-BR")}
+          {filtered.length !== leads.length
+            ? ` de ${leads.length.toLocaleString("pt-BR")}`
+            : " no total"}
           <span className="ml-2 opacity-60">
             · página {safePage + 1} de {totalPages}
           </span>
@@ -245,8 +280,8 @@ export function LeadsTable({
           </button>
         )}
         <ExportMenu
-          leads={leads}
-          meta={{ workspaceName, periodLabel, filtersActive }}
+          leads={filtered}
+          meta={{ workspaceName, periodLabel, filtersActive: filtersActive || filtered.length !== leads.length }}
         />
       </div>
 
@@ -267,6 +302,13 @@ export function LeadsTable({
         />
       )}
 
+      {bar}
+
+      {filtered.length === 0 ? (
+        <div className="px-6 py-8 text-center text-sm text-[color:var(--muted-foreground)]">
+          Nenhum lead bate com os filtros da lista.
+        </div>
+      ) : (
       <div className="max-h-[640px] overflow-auto">
         <table className="w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-[color:var(--card)]">
@@ -349,14 +391,15 @@ export function LeadsTable({
           </tbody>
         </table>
       </div>
+      )}
 
       {/* Paginação */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between gap-3 border-t border-[color:var(--border)] px-6 py-3 text-xs text-[color:var(--muted-foreground)]">
           <span className="tabular-nums">
             Mostrando {safePage * PAGE_SIZE + 1}–
-            {Math.min((safePage + 1) * PAGE_SIZE, leads.length)} de{" "}
-            {leads.length.toLocaleString("pt-BR")}
+            {Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} de{" "}
+            {filtered.length.toLocaleString("pt-BR")}
           </span>
           <div className="flex items-center gap-2">
             <PageBtn disabled={safePage === 0} onClick={() => setPage(0)}>«</PageBtn>

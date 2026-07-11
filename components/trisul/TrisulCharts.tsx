@@ -81,7 +81,7 @@ export function TrisulStatusChart({ data }: { data: StatusSlice[] }) {
                   <Cell key={i} fill={s.color} />
                 ))}
               </Pie>
-              <Tooltip content={<AtonTooltip showPercent />} />
+              <Tooltip content={<AtonTooltip showPercent percentTotal={total} />} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 6 }} />
             </PieChart>
           </ResponsiveContainer>
@@ -103,10 +103,10 @@ export function TrisulFollowupChart({ data }: { data: FollowupPoint[] }) {
       ) : (
         <div style={{ width: "100%", height: 250 }}>
           <ResponsiveContainer>
-            <BarChart data={data} margin={{ top: 16, right: 16, bottom: 0, left: -20 }}>
+            <BarChart data={data} margin={{ top: 16, right: 16, bottom: 0, left: 0 }}>
               <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} />
               <XAxis dataKey="name" tick={AXIS_STYLE} tickLine={false} axisLine={{ stroke: CHART_AXIS.axis }} />
-              <YAxis tick={AXIS_STYLE} tickLine={false} axisLine={{ stroke: CHART_AXIS.axis }} allowDecimals={false} width={36} />
+              <YAxis tick={AXIS_STYLE} tickLine={false} axisLine={{ stroke: CHART_AXIS.axis }} allowDecimals={false} domain={[0, "dataMax"]} width={44} />
               <Tooltip content={<AtonTooltip />} cursor={{ fill: "rgba(0,87,255,0.08)" }} />
               <Bar dataKey="value" name="Respostas" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={400}>
                 {data.map((_, i) => (
@@ -138,7 +138,7 @@ export function TrisulCanalChart({ data }: { data: CanalSlice[] }) {
                   <Cell key={i} fill={s.color} />
                 ))}
               </Pie>
-              <Tooltip content={<AtonTooltip showPercent />} />
+              <Tooltip content={<AtonTooltip showPercent percentTotal={total} />} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 6 }} />
             </PieChart>
           </ResponsiveContainer>
