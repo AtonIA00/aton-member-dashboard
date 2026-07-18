@@ -109,7 +109,8 @@ export default async function Page({
       filters={filters}
       tab={tab}
       hmac={hmacForClient}
-      retornoComercialEnabled={isRetornoComercialEnabled(access)}
+      retornoComercialEnabled={isRetornoComercialEnabled()}
+      retornoComercialVisible={access.mostrarRetornoComercial !== false}
       canExcludeLeads={isLeadExcludeAllowed(hmac.userId)}
       adminView={access.superadminBypass}
     />

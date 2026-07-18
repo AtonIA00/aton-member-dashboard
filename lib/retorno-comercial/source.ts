@@ -1,5 +1,4 @@
 import "server-only";
-import type { AccessGranted } from "@/lib/access";
 import type { LeadAguardando, RetornoComercial } from "./types";
 
 // Adapter da seção "Retorno do time comercial" (v1 — Opção 1: endpoint
@@ -21,9 +20,13 @@ import type { LeadAguardando, RetornoComercial } from "./types";
 // Feature flag global (kill-switch) + toggle por assinante. Enquanto o
 // endpoint do Core não está no ar, MEMBER_DASHBOARD_RETORNO_COMERCIAL_ENABLED
 // fica ausente/false → a seção sobe DARK (código presente, invisível).
-export function isRetornoComercialEnabled(access: AccessGranted): boolean {
-  const flagOn = process.env.MEMBER_DASHBOARD_RETORNO_COMERCIAL_ENABLED === "true";
-  return flagOn && access.mostrarRetornoComercial !== false;
+// Feature DISPONÍVEL (kill-switch global). A visibilidade por assinante
+// (ocultar/mostrar) é preferência separada: wa_member_dashboard_access
+// .mostrar_retorno_comercial, controlada pela UI e passada como estado
+// inicial do toggle — NÃO gateia a API (senão o clique em "mostrar" correria
+// com o fetch). Aqui só a flag.
+export function isRetornoComercialEnabled(): boolean {
+  return process.env.MEMBER_DASHBOARD_RETORNO_COMERCIAL_ENABLED === "true";
 }
 
 // ── Cache em memória (15min por workspace) ────────────────────────────────

@@ -47,8 +47,10 @@ type Props = {
   tab: TabKey;
   /** Params HMAC do iframe original — repassados pro TonView (chat usa). */
   hmac: HmacParams;
-  /** Gate da seção "Retorno do time comercial" (flag global + toggle do assinante). */
+  /** Feature "Retorno do time comercial" disponível (flag global). */
   retornoComercialEnabled: boolean;
+  /** Estado inicial de visibilidade da seção (toggle ocultar/mostrar). */
+  retornoComercialVisible: boolean;
   /** Se o viewer pode marcar leads como teste (allowlist Aton). */
   canExcludeLeads: boolean;
   /** true = acesso via bypass de super-admin (workspace não liberado). */
@@ -70,6 +72,7 @@ export async function Dashboard({
   tab,
   hmac,
   retornoComercialEnabled,
+  retornoComercialVisible,
   canExcludeLeads,
   adminView,
 }: Props) {
@@ -176,6 +179,7 @@ export async function Dashboard({
               customTo={customTo}
               hmac={hmac}
               retornoComercialEnabled={retornoComercialEnabled}
+              retornoComercialVisible={retornoComercialVisible}
               canExcludeLeads={canExcludeLeads}
             />
           )
@@ -199,6 +203,7 @@ type DashboardContentProps = {
   customTo?: string;
   hmac: HmacParams;
   retornoComercialEnabled: boolean;
+  retornoComercialVisible: boolean;
   canExcludeLeads: boolean;
 };
 
@@ -210,6 +215,7 @@ function DashboardContent({
   customTo,
   hmac,
   retornoComercialEnabled,
+  retornoComercialVisible,
   canExcludeLeads,
 }: DashboardContentProps) {
   const range = resolvePeriod(periodKey, customFrom, customTo);
@@ -241,7 +247,11 @@ function DashboardContent({
       {/* Retorno do time comercial — janela própria (não segue os filtros do
           dash), some sozinha se indisponível/desligada. Fica fora do ternário
           de período vazio de propósito: é um snapshot "de agora". */}
-      <RetornoComercialSection enabled={retornoComercialEnabled} hmac={hmac} />
+      <RetornoComercialSection
+        enabled={retornoComercialEnabled}
+        initialVisible={retornoComercialVisible}
+        hmac={hmac}
+      />
 
       {data.totalNoPeriodo === 0 ? (
         <EmptyState

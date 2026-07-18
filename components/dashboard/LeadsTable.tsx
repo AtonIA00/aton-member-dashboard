@@ -313,11 +313,11 @@ export function LeadsTable({
         <table className="w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-[color:var(--card)]">
             <tr>
+              <Th>ID</Th>
               <Th>Data</Th>
               <Th>Campanha</Th>
               <Th>Nome</Th>
               <Th>Etapa</Th>
-              <Th>Resumo</Th>
               <Th align="center">MQL</Th>
               <Th>Telefone</Th>
               {canExclude && (
@@ -337,6 +337,9 @@ export function LeadsTable({
                   key={l.id}
                   className="group border-t border-[color:var(--border)]/60 align-top transition-colors hover:bg-[color:var(--primary)]/5"
                 >
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-[color:var(--muted-foreground)] tabular-nums">
+                    {l.id}
+                  </td>
                   <td className="whitespace-nowrap px-4 py-3 text-xs text-[color:var(--muted-foreground)] tabular-nums">
                     {fmtDate(l.data)}
                   </td>
@@ -357,11 +360,6 @@ export function LeadsTable({
                       title={l.etapa_funil ?? ""}
                     >
                       {GRUPO_LABEL[g]}
-                    </span>
-                  </td>
-                  <td className="max-w-[280px] truncate px-4 py-3 text-xs text-[color:var(--muted-foreground)]">
-                    <span title={l.resumo_conversa ?? ""}>
-                      {l.resumo_conversa ?? "—"}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-center">

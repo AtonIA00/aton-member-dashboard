@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RetornoComercial } from "@/lib/retorno-comercial/types";
 
 type HmacParams = {
@@ -11,8 +11,10 @@ type HmacParams = {
 };
 
 type Props = {
-  /** Gate server-side (feature flag + toggle do assinante). Se false, nem monta. */
+  /** Feature disponível (flag global). Se false, nem monta. */
   enabled: boolean;
+  /** Estado inicial do toggle ocultar/mostrar (mostrar_retorno_comercial). */
+  initialVisible: boolean;
   hmac: HmacParams;
 };
 
@@ -68,9 +70,13 @@ function nomeDisplay(nome: string | null, telefone: string | null): string {
   return telefone ? fmtTelefone(telefone) : "Lead sem nome";
 }
 
-export function RetornoComercialSection({ enabled, hmac }: Props) {
-  const [state, setState] = useState<State>(enabled ? { kind: "loading" } : { kind: "hidden" });
+export function RetornoComercialSection({ enabled, initialVisible, hmac }: Props) {
+  const [visible, setVisible] = useState(initialVisible);
+  const [state, setState] = useState<State>(
+    enabled && initialVisible ? { kind: "loading" } : { kind: "hidden" },
+  );
   const [showList, setShowList] = useState(false);
+  const [toggling, setToggling] = useState(false);
 
   const hmacQS = useMemo(() => {
     const p = new URLSearchParams();
@@ -82,7 +88,8 @@ export function RetornoComercialSection({ enabled, hmac }: Props) {
   }, [hmac]);
 
   useEffect(() => {
-    if (!enabled) {
+    // Só busca quando a feature está on E o assinante não ocultou a seção.
+    if (!enabled || !visible) {
       setState({ kind: "hidden" });
       return;
     }
@@ -92,14 +99,12 @@ export function RetornoComercialSection({ enabled, hmac }: Props) {
       try {
         const res = await fetch(`/api/retorno-comercial?${hmacQS}`);
         if (cancelled) return;
-        // 204 (desligado/indisponível) ou erro → esconde a seção.
         if (res.status === 204 || !res.ok) {
           setState({ kind: "hidden" });
           return;
         }
         const data = (await res.json()) as RetornoComercial;
         if (cancelled) return;
-        // Nada acionável na janela → não polui o dash.
         if (!data || data.agendados <= 0) {
           setState({ kind: "hidden" });
           return;
@@ -112,8 +117,61 @@ export function RetornoComercialSection({ enabled, hmac }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [enabled, hmacQS]);
+  }, [enabled, visible, hmacQS]);
 
+  // Persiste a preferência por workspace (optimista; mantém local se falhar).
+  const setPref = useCallback(
+    async (next: boolean) => {
+      setVisible(next);
+      setToggling(true);
+      try {
+        await fetch("/api/me/retorno-comercial", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            visible: next,
+            workspace_id: hmac.workspace_id,
+            user_id: hmac.user_id,
+            timestamp: hmac.timestamp,
+            signature: hmac.signature,
+          }),
+        });
+      } catch {
+        /* persistência falhou — mantém o estado local nesta sessão */
+      } finally {
+        setToggling(false);
+      }
+    },
+    [hmac],
+  );
+
+  if (!enabled) return null;
+
+  // Oculto pelo assinante → stub discreto com "mostrar" (permite reaparecer).
+  if (!visible) {
+    return (
+      <section aria-label="Retorno do time comercial" className="mt-10">
+        <div className="flex items-center gap-2 rounded-[var(--radius-lg)] border border-dashed border-[color:var(--border)] bg-[color:var(--card)]/40 px-5 py-2.5">
+          <span aria-hidden className="block h-4 w-1 rounded-sm bg-[color:var(--muted-foreground)]/40" />
+          <h2 className="font-[family-name:var(--font-montserrat)] text-xs font-bold uppercase tracking-[0.15em] text-[color:var(--muted-foreground)]">
+            Retorno do time comercial
+          </h2>
+          <span className="text-[11px] text-[color:var(--muted-foreground)]/60">oculto</span>
+          <button
+            type="button"
+            onClick={() => setPref(true)}
+            disabled={toggling}
+            className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-semibold text-[color:var(--primary)] transition-opacity hover:opacity-80 disabled:opacity-50"
+          >
+            <EyeIcon />
+            mostrar
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  // Visível, mas sem dados acionáveis → não renderiza (nada a mostrar).
   if (state.kind === "hidden") return null;
 
   return (
@@ -128,6 +186,16 @@ export function RetornoComercialSection({ enabled, hmac }: Props) {
             últimos {state.data.janela_dias} dias · via plataforma (Aton)
           </span>
         )}
+        <button
+          type="button"
+          onClick={() => setPref(false)}
+          disabled={toggling}
+          title="Ocultar esta seção (pode reaparecer depois)"
+          aria-label="Ocultar seção"
+          className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-[color:var(--muted-foreground)]/50 transition-colors hover:bg-[color:var(--surface-2)] hover:text-[color:var(--foreground)] disabled:opacity-50"
+        >
+          <EyeOffIcon />
+        </button>
       </div>
 
       {state.kind === "loading" ? (
@@ -140,6 +208,26 @@ export function RetornoComercialSection({ enabled, hmac }: Props) {
         />
       )}
     </section>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M9.88 9.88a3 3 0 0 0 4.24 4.24" />
+      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+      <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </svg>
   );
 }
 

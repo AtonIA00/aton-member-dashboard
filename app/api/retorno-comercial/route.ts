@@ -33,8 +33,9 @@ export async function GET(req: NextRequest) {
   }
 
   const access = await checkDashboardAccess(hmac.workspaceId, hmac.userId);
-  if (!access.granted || !isRetornoComercialEnabled(access)) {
-    // Desligado (flag/toggle) ou sem acesso → seção some. 204 sem corpo.
+  if (!access.granted || !isRetornoComercialEnabled()) {
+    // Feature off / sem acesso → seção some. 204 sem corpo. (A visibilidade
+    // por assinante é preferência de UI, não gateia a API.)
     return new NextResponse(null, { status: 204 });
   }
 
