@@ -53,6 +53,8 @@ type Props = {
   retornoComercialVisible: boolean;
   /** Se o viewer pode marcar leads como teste (allowlist Aton). */
   canExcludeLeads: boolean;
+  /** Se o viewer pode editar status/MQL direto no dash (SÓ super-admin). */
+  canEditLeads: boolean;
   /** true = acesso via bypass de super-admin (workspace não liberado). */
   adminView: boolean;
 };
@@ -74,6 +76,7 @@ export async function Dashboard({
   retornoComercialEnabled,
   retornoComercialVisible,
   canExcludeLeads,
+  canEditLeads,
   adminView,
 }: Props) {
   const tonAvailable = isTonEnabledForTier(tier);
@@ -181,6 +184,7 @@ export async function Dashboard({
               retornoComercialEnabled={retornoComercialEnabled}
               retornoComercialVisible={retornoComercialVisible}
               canExcludeLeads={canExcludeLeads}
+              canEditLeads={canEditLeads}
             />
           )
         )}
@@ -205,6 +209,7 @@ type DashboardContentProps = {
   retornoComercialEnabled: boolean;
   retornoComercialVisible: boolean;
   canExcludeLeads: boolean;
+  canEditLeads: boolean;
 };
 
 function DashboardContent({
@@ -217,6 +222,7 @@ function DashboardContent({
   retornoComercialEnabled,
   retornoComercialVisible,
   canExcludeLeads,
+  canEditLeads,
 }: DashboardContentProps) {
   const range = resolvePeriod(periodKey, customFrom, customTo);
   const periodSummary = formatPeriodSummary(periodKey, range);
@@ -304,6 +310,7 @@ function DashboardContent({
               periodLabel={periodLabel}
               filtersActive={filtersActive}
               canExclude={canExcludeLeads}
+              canEdit={canEditLeads}
               hmac={hmac}
             />
           </div>

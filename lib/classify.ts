@@ -19,6 +19,25 @@ export const GRUPO_LABEL: Record<Grupo, string> = {
   Outros: "Outros",
 };
 
+// Opções canônicas de status pro editor do super-admin (dropdown agrupado).
+// `value` é o que grava no banco — DEVE bater com o vocabulário do classify()
+// (que compara em minúsculas): "Negociacao" sem acento (classify tem
+// "negociacao"). `label` é o texto exibido. `grupo` alimenta o optgroup
+// (exibido via GRUPO_LABEL, ex.: "Convertido").
+export const STATUS_OPTIONS: { grupo: Grupo; label: string; value: string }[] = [
+  { grupo: "Novo", label: "Novo Lead", value: "Novo Lead" },
+  { grupo: "Em conversa", label: "Está no script", value: "Está no script" },
+  { grupo: "Agendado+", label: "Agendado", value: "Agendado" },
+  { grupo: "Agendado+", label: "Especialista", value: "Especialista" },
+  { grupo: "Agendado+", label: "Negociação", value: "Negociacao" },
+  { grupo: "Agendado+", label: "Financeiro", value: "Financeiro" },
+  { grupo: "Descartado", label: "Não se interessou", value: "Não se interessou" },
+  { grupo: "Descartado", label: "Lead desqualificado", value: "Lead desqualificado" },
+  { grupo: "Descartado", label: "Corretor de imóveis", value: "Corretor de imóveis" },
+  { grupo: "Descartado", label: "Lead quer outro imóvel", value: "Lead quer outro imóvel" },
+  { grupo: "Descartado", label: "Lead sem interesse", value: "Lead sem interesse" },
+];
+
 const SET_AGENDADO_PLUS = new Set([
   "agendado",
   "especialista",

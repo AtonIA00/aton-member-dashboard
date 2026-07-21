@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { classify, GRUPO_CHIP, GRUPO_LABEL, type Grupo } from "@/lib/classify";
+import { classify, GRUPO_CHIP, GRUPO_LABEL, STATUS_OPTIONS, type Grupo } from "@/lib/classify";
 import type { LeadRow } from "@/lib/leads";
 import {
   exportLeadsToCsv,
@@ -35,7 +35,9 @@ type Props = {
   filtersActive: boolean;
   /** Se o viewer (user_id) pode marcar leads como teste (allowlist Aton). */
   canExclude: boolean;
-  /** Params HMAC pra autenticar as chamadas de exclusão. */
+  /** Se o viewer pode editar status/MQL direto (SÓ super-admin). */
+  canEdit: boolean;
+  /** Params HMAC pra autenticar as chamadas de exclusão/edição. */
   hmac: HmacParams;
 };
 
@@ -111,6 +113,7 @@ export function LeadsTable({
   periodLabel,
   filtersActive,
   canExclude,
+  canEdit,
   hmac,
 }: Props) {
   const router = useRouter();
@@ -350,27 +353,45 @@ export function LeadsTable({
                     {l.nome_lead ?? <span className="text-[color:var(--muted-foreground)]/60">—</span>}
                   </td>
                   <td className="px-4 py-3">
-                    <span
-                      className="inline-block whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide"
-                      style={{
-                        backgroundColor: chip.bg,
-                        color: chip.text,
-                        borderColor: chip.border,
-                      }}
-                      title={l.etapa_funil ?? ""}
-                    >
-                      {GRUPO_LABEL[g]}
-                    </span>
+                    {canEdit ? (
+                      <EditableStatusCell
+                        leadId={l.id}
+                        current={l.etapa_funil}
+                        hmac={hmac}
+                        onSaved={() => router.refresh()}
+                      />
+                    ) : (
+                      <span
+                        className="inline-block whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide"
+                        style={{
+                          backgroundColor: chip.bg,
+                          color: chip.text,
+                          borderColor: chip.border,
+                        }}
+                        title={l.etapa_funil ?? ""}
+                      >
+                        {GRUPO_LABEL[g]}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <span
-                      className={
-                        "inline-block min-w-[2.5rem] rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase " +
-                        mql.cls
-                      }
-                    >
-                      {mql.label}
-                    </span>
+                    {canEdit ? (
+                      <EditableMqlCell
+                        leadId={l.id}
+                        current={l.mql}
+                        hmac={hmac}
+                        onSaved={() => router.refresh()}
+                      />
+                    ) : (
+                      <span
+                        className={
+                          "inline-block min-w-[2.5rem] rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase " +
+                          mql.cls
+                        }
+                      >
+                        {mql.label}
+                      </span>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-[color:var(--muted-foreground)]">
                     {fmtTelefone(l.ddd_lead, l.telefone)}
@@ -693,6 +714,127 @@ function ExportItem({
         </span>
       </span>
     </button>
+  );
+}
+
+// Escreve status/MQL no DB (só super-admin — gate real no servidor).
+async function saveLeadField(
+  hmac: HmacParams,
+  leadId: number,
+  field: "status" | "mql",
+  value: string | null,
+): Promise<void> {
+  const res = await fetch("/api/leads/update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      lead_id: leadId,
+      field,
+      value,
+      workspace_id: hmac.workspace_id,
+      user_id: hmac.user_id,
+      timestamp: hmac.timestamp,
+      signature: hmac.signature,
+    }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+const EDIT_SELECT_CLS =
+  "cursor-pointer rounded border border-[color:var(--border)] bg-[color:var(--card)] px-1.5 py-1 text-[11px] text-[color:var(--foreground)] outline-none transition-colors hover:border-[color:var(--primary)]/40 focus:border-[color:var(--primary)] disabled:opacity-50";
+
+function EditableStatusCell({
+  leadId,
+  current,
+  hmac,
+  onSaved,
+}: {
+  leadId: number;
+  current: string | null;
+  hmac: HmacParams;
+  onSaved: () => void;
+}) {
+  const [val, setVal] = useState(current ?? "");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setVal(current ?? ""), [current]);
+
+  const known = STATUS_OPTIONS.some((o) => o.value === val);
+  const grupos = [...new Set(STATUS_OPTIONS.map((o) => o.grupo))];
+
+  async function onChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const next = e.target.value;
+    const prev = val;
+    setVal(next);
+    setBusy(true);
+    try {
+      await saveLeadField(hmac, leadId, "status", next);
+      onSaved();
+    } catch {
+      setVal(prev);
+      alert("Não foi possível salvar o status.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <select value={val} onChange={onChange} disabled={busy} aria-label="Editar status" className={EDIT_SELECT_CLS}>
+      {/* valor atual fora da lista canônica (casing/legado) — mantém visível */}
+      {!known && val && <option value={val}>{val} (atual)</option>}
+      {grupos.map((gr) => (
+        <optgroup key={gr} label={GRUPO_LABEL[gr]}>
+          {STATUS_OPTIONS.filter((o) => o.grupo === gr).map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  );
+}
+
+function EditableMqlCell({
+  leadId,
+  current,
+  hmac,
+  onSaved,
+}: {
+  leadId: number;
+  current: string | null;
+  hmac: HmacParams;
+  onSaved: () => void;
+}) {
+  const norm = (m: string | null) => {
+    const v = (m ?? "").toLowerCase().trim();
+    return v === "sim" ? "sim" : v === "não" || v === "nao" ? "não" : "";
+  };
+  const [val, setVal] = useState(norm(current));
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setVal(norm(current)), [current]);
+
+  async function onChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const next = e.target.value; // "sim" | "não" | ""
+    const prev = val;
+    setVal(next);
+    setBusy(true);
+    try {
+      await saveLeadField(hmac, leadId, "mql", next === "" ? null : next);
+      onSaved();
+    } catch {
+      setVal(prev);
+      alert("Não foi possível salvar o MQL.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <select value={val} onChange={onChange} disabled={busy} aria-label="Editar MQL" className={EDIT_SELECT_CLS}>
+      <option value="">—</option>
+      <option value="sim">Sim</option>
+      <option value="não">Não</option>
+    </select>
   );
 }
 

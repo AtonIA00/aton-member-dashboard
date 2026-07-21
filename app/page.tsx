@@ -1,4 +1,4 @@
-import { checkDashboardAccess } from "@/lib/access";
+import { checkDashboardAccess, isSuperAdmin } from "@/lib/access";
 import { validateUchatSignature } from "@/lib/hmac";
 import { parsePeriodKey } from "@/lib/period";
 import { parseFilters } from "@/lib/filters";
@@ -112,6 +112,7 @@ export default async function Page({
       retornoComercialEnabled={isRetornoComercialEnabled()}
       retornoComercialVisible={access.mostrarRetornoComercial !== false}
       canExcludeLeads={isLeadExcludeAllowed(hmac.userId)}
+      canEditLeads={isSuperAdmin(hmac.userId)}
       adminView={access.superadminBypass}
     />
   );

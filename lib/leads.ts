@@ -117,6 +117,15 @@ function cacheKey(workspaceId: string, range: DateRange): string {
   return `${workspaceId}|${range.from ?? ""}|${range.to ?? ""}`;
 }
 
+/** Invalida o cache base de um workspace (todas as janelas). Chamar após uma
+ *  escrita (edição de status/mql) pra o próximo fetch refletir na hora. */
+export function invalidateLeadsCache(workspaceId: string): void {
+  const prefix = `${workspaceId}|`;
+  for (const k of cache.keys()) {
+    if (k.startsWith(prefix)) cache.delete(k);
+  }
+}
+
 async function fetchBaseLeads(
   workspaceId: string,
   range: DateRange,
