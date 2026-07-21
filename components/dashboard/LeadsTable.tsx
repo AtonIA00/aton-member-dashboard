@@ -740,8 +740,19 @@ async function saveLeadField(
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
+// Layout base do select editável — a COR (bg/text/border) vem do valor:
+// etapa pela cor do grupo (GRUPO_CHIP), MQL verde/vermelho/neutro.
 const EDIT_SELECT_CLS =
-  "cursor-pointer rounded border border-[color:var(--border)] bg-[color:var(--card)] px-1.5 py-1 text-[11px] text-[color:var(--foreground)] outline-none transition-colors hover:border-[color:var(--primary)]/40 focus:border-[color:var(--primary)] disabled:opacity-50";
+  "cursor-pointer rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide outline-none transition-all focus:ring-2 focus:ring-[color:var(--primary)]/30 disabled:opacity-50";
+
+// Cor do select de MQL conforme o valor (mesma paleta do chip antigo).
+function mqlSelectCls(val: string): string {
+  if (val === "sim")
+    return "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  if (val === "não")
+    return "border-[color:var(--destructive)]/40 bg-[color:var(--destructive)]/10 text-[color:var(--destructive)]";
+  return "border-[color:var(--muted-foreground)]/30 bg-[color:var(--surface-2)]/60 text-[color:var(--muted-foreground)]";
+}
 
 function EditableStatusCell({
   leadId,
@@ -760,6 +771,7 @@ function EditableStatusCell({
 
   const known = STATUS_OPTIONS.some((o) => o.value === val);
   const grupos = [...new Set(STATUS_OPTIONS.map((o) => o.grupo))];
+  const chip = GRUPO_CHIP[classify(val)]; // cor do select conforme o grupo atual
 
   async function onChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const next = e.target.value;
@@ -778,7 +790,14 @@ function EditableStatusCell({
   }
 
   return (
-    <select value={val} onChange={onChange} disabled={busy} aria-label="Editar status" className={EDIT_SELECT_CLS}>
+    <select
+      value={val}
+      onChange={onChange}
+      disabled={busy}
+      aria-label="Editar status"
+      className={EDIT_SELECT_CLS}
+      style={{ backgroundColor: chip.bg, color: chip.text, borderColor: chip.border }}
+    >
       {/* valor atual fora da lista canônica (casing/legado) — mantém visível */}
       {!known && val && <option value={val}>{val} (atual)</option>}
       {grupos.map((gr) => (
@@ -830,7 +849,13 @@ function EditableMqlCell({
   }
 
   return (
-    <select value={val} onChange={onChange} disabled={busy} aria-label="Editar MQL" className={EDIT_SELECT_CLS}>
+    <select
+      value={val}
+      onChange={onChange}
+      disabled={busy}
+      aria-label="Editar MQL"
+      className={EDIT_SELECT_CLS + " " + mqlSelectCls(val)}
+    >
       <option value="">—</option>
       <option value="sim">Sim</option>
       <option value="não">Não</option>
