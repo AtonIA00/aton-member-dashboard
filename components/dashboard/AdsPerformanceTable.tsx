@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { AdsPerfRow } from "@/lib/leads";
+import type { Delta } from "@/lib/deltas";
 
 type Props = { rows: AdsPerfRow[] };
 
@@ -161,7 +162,8 @@ export function AdsPerformanceTable({ rows }: Props) {
                   <HeatPill v={r.pctInteracao} thresholds={PCT_INTERACAO_THRESHOLDS} />
                 </td>
                 <td className="px-4 py-3 text-right font-bold tabular-nums text-[color:var(--foreground)]">
-                  {r.total.toLocaleString("pt-BR")}
+                  <div>{r.total.toLocaleString("pt-BR")}</div>
+                  {r.totalDelta && <TotalDelta delta={r.totalDelta} />}
                 </td>
               </tr>
             ))}
@@ -208,6 +210,26 @@ function Th({
         {children} <span aria-hidden>{dir}</span>
       </button>
     </th>
+  );
+}
+
+// Delta compacto do Total (volume) vs. período anterior — mesma régua/cores
+// dos KPIs. Só aparece quando há período anterior (filtro de data).
+function TotalDelta({ delta }: { delta: Delta }) {
+  const cls =
+    delta.classification === "positive"
+      ? "text-[#10b981]"
+      : delta.classification === "negative"
+        ? "text-[color:var(--destructive)]"
+        : "text-[color:var(--muted-foreground)]";
+  const label = delta.direction === "new" ? "novo" : delta.formatted;
+  return (
+    <span
+      className={"mt-0.5 block text-[10px] font-medium " + cls}
+      title={`Atual: ${delta.value} · Anterior: ${delta.valuePrevious}`}
+    >
+      {label}
+    </span>
   );
 }
 
