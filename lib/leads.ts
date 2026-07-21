@@ -64,9 +64,13 @@ export type AdsPerfRow = {
   pctInteracao: number;
   total: number;
   isUnknownId: boolean;
-  /** Delta do Total (volume de leads) vs. período anterior — igual aos KPIs.
-   *  Ausente quando não há período anterior ("Todo período"). */
+  /** Deltas vs. período anterior — igual aos KPIs. Ausentes no "Todo período".
+   *  Os de % só existem quando o anúncio também teve leads no período anterior
+   *  (senão não há taxa comparável). */
   totalDelta?: Delta;
+  pctAgendamentoDelta?: Delta;
+  pctMqlDelta?: Delta;
+  pctInteracaoDelta?: Delta;
 };
 
 export type Deltas = {
@@ -460,18 +464,27 @@ export function computeAdsPerformance(leads: LeadRow[]): AdsPerfRow[] {
 }
 
 /**
- * Anexa a cada anúncio do período ATUAL o delta de Total (volume) vs. o
- * período anterior, casando por idAnuncio. Anúncio sem par no anterior →
- * delta "novo". Mesma régua dos KPIs (count, higher_is_better).
+ * Anexa a cada anúncio do período ATUAL os deltas vs. o período anterior,
+ * casando por idAnuncio (mesma régua dos KPIs):
+ * - Total: sempre (count, higher_is_better). Sem par no anterior → "novo".
+ * - % Agendamento / MQL / Interação: só quando o anúncio TAMBÉM teve leads no
+ *   anterior (senão não há taxa comparável) — percent (pp), higher_is_better.
  */
 function attachAdsPerfDeltas(current: AdsPerfRow[], previous: AdsPerfRow[]): AdsPerfRow[] {
-  const prevTotal = new Map<string, number>();
-  for (const p of previous) prevTotal.set(p.idAnuncio, p.total);
-  return current.map((r) => ({
-    ...r,
-    totalDelta: computeDelta(r.total, prevTotal.get(r.idAnuncio) ?? 0, {
-      kind: "count",
-      orientation: "higher_is_better",
-    }),
-  }));
+  const prevByAd = new Map<string, AdsPerfRow>();
+  for (const p of previous) prevByAd.set(p.idAnuncio, p);
+  const pctOpts = { kind: "percent" as const, orientation: "higher_is_better" as const };
+  return current.map((r) => {
+    const prev = prevByAd.get(r.idAnuncio);
+    return {
+      ...r,
+      totalDelta: computeDelta(r.total, prev?.total ?? 0, {
+        kind: "count",
+        orientation: "higher_is_better",
+      }),
+      pctAgendamentoDelta: prev ? computeDelta(r.pctAgendamento, prev.pctAgendamento, pctOpts) : undefined,
+      pctMqlDelta: prev ? computeDelta(r.pctMql, prev.pctMql, pctOpts) : undefined,
+      pctInteracaoDelta: prev ? computeDelta(r.pctInteracao, prev.pctInteracao, pctOpts) : undefined,
+    };
+  });
 }

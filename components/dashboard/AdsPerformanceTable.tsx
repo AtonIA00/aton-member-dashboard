@@ -154,16 +154,19 @@ export function AdsPerformanceTable({ rows }: Props) {
                 </td>
                 <td className="px-4 py-3 text-right">
                   <HeatPill v={r.pctAgendamento} thresholds={PCT_AGEND_THRESHOLDS} />
+                  {r.pctAgendamentoDelta && <DeltaLine delta={r.pctAgendamentoDelta} />}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <HeatPill v={r.pctMql} thresholds={PCT_MQL_THRESHOLDS} />
+                  {r.pctMqlDelta && <DeltaLine delta={r.pctMqlDelta} />}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <HeatPill v={r.pctInteracao} thresholds={PCT_INTERACAO_THRESHOLDS} />
+                  {r.pctInteracaoDelta && <DeltaLine delta={r.pctInteracaoDelta} />}
                 </td>
                 <td className="px-4 py-3 text-right font-bold tabular-nums text-[color:var(--foreground)]">
                   <div>{r.total.toLocaleString("pt-BR")}</div>
-                  {r.totalDelta && <TotalDelta delta={r.totalDelta} />}
+                  {r.totalDelta && <DeltaLine delta={r.totalDelta} />}
                 </td>
               </tr>
             ))}
@@ -213,9 +216,10 @@ function Th({
   );
 }
 
-// Delta compacto do Total (volume) vs. período anterior — mesma régua/cores
-// dos KPIs. Só aparece quando há período anterior (filtro de data).
-function TotalDelta({ delta }: { delta: Delta }) {
+// Delta compacto vs. período anterior — mesma régua/cores dos KPIs. Usado
+// no Total (count) e nas colunas de % (pontos percentuais). Só aparece
+// quando há período anterior (filtro de data).
+function DeltaLine({ delta }: { delta: Delta }) {
   const cls =
     delta.classification === "positive"
       ? "text-[#10b981]"
