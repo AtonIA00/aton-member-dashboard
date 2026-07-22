@@ -208,25 +208,26 @@ export async function getMetaAdsForWorkspace(
 }
 
 // ── Shape serializável pro client (Map não atravessa a fronteira RSC) ───────
+// DECISÃO (Murillo): a contagem de leads usada em TODOS os cálculos é a da
+// base Aton (fonte da verdade). Leads/CPL reportados pelo Meta são
+// frequentemente errôneos → NÃO são enviados ao client nem exibidos.
 export type MetaAdsForTable = {
   currency: string;
   totalSpend: number;
-  totalMetaLeads: number;
   avgCtr: number; // clicks/impressions*100 (ponderado)
   avgCpc: number; // spend/clicks
-  /** por ad_id: [spend, ctr, cpc, cpm, metaLeads, metaCpl] */
-  ads: Record<string, [number, number, number, number, number, number | null]>;
+  /** por ad_id: [spend, ctr, cpc, cpm] — só métricas de mídia. */
+  ads: Record<string, [number, number, number, number]>;
 };
 
 export function toTablePayload(d: MetaAdsData): MetaAdsForTable {
   const ads: MetaAdsForTable["ads"] = {};
   for (const [id, a] of d.byAdId) {
-    ads[id] = [a.spend, a.ctr, a.cpc, a.cpm, a.metaLeads, a.metaCpl];
+    ads[id] = [a.spend, a.ctr, a.cpc, a.cpm];
   }
   return {
     currency: d.currency,
     totalSpend: d.totalSpend,
-    totalMetaLeads: d.totalMetaLeads,
     avgCtr: d.totalImpressions > 0 ? (d.totalClicks / d.totalImpressions) * 100 : 0,
     avgCpc: d.totalClicks > 0 ? d.totalSpend / d.totalClicks : 0,
     ads,

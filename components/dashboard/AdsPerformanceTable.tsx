@@ -246,8 +246,8 @@ export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive }: Prop
 
       {metaAds && (
         <div className="border-t border-[color:var(--border)] px-6 py-2 text-[10px] leading-relaxed text-[color:var(--muted-foreground)]/70">
-          Investimento e CTR via <strong className="font-semibold">Meta Ads</strong> (conta vinculada, mesmo período do filtro).
-          CPL, R$/MQL e R$/Conv. usam os leads <strong className="font-semibold">desta base</strong> — podem diferir do CPL da plataforma.
+          Investimento, CTR e CPC via <strong className="font-semibold">Meta Ads</strong> (conta vinculada, mesmo período do filtro).
+          Contagem de leads: <strong className="font-semibold">sempre a desta base Aton</strong> (fonte da verdade) — CPL, R$/MQL e R$/Conv. são investimento ÷ leads reais.
           Anúncios sem investimento no período aparecem com “—”.
         </div>
       )}
@@ -316,7 +316,7 @@ function MetaCells({
   row,
   currency,
 }: {
-  ad: [number, number, number, number, number, number | null] | undefined;
+  ad: [number, number, number, number] | undefined;
   row: AdsPerfRow;
   currency: string;
 }) {
@@ -331,8 +331,10 @@ function MetaCells({
       </>
     );
   }
-  const [spend, ctr, cpc, cpm, metaLeads, metaCpl] = ad;
-  const tip = `Meta: ${metaLeads} leads · CPL ${metaCpl != null ? fmtMoney(metaCpl, currency) : "—"} · CPC ${fmtMoney(cpc, currency)} · CPM ${fmtMoney(cpm, currency)}`;
+  const [spend, ctr, cpc, cpm] = ad;
+  // Só métricas de MÍDIA no tooltip — contagem de leads é SEMPRE a da base
+  // Aton (decisão: leads do Meta são frequentemente errôneos, não exibir).
+  const tip = `Meta: CPC ${fmtMoney(cpc, currency)} · CPM ${fmtMoney(cpm, currency)}`;
   return (
     <>
       <td className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold tabular-nums text-[color:var(--foreground)]" title={tip}>
