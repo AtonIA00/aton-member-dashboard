@@ -468,13 +468,18 @@ function AdPreviewModal({
   hmac: HmacParams;
   onClose: () => void;
 }) {
-  const [state, setState] = useState<{ src: string | null; error: boolean }>({
-    src: null,
-    error: false,
-  });
+  // error "unavailable" = a Meta não tem preview deste ad (404 do route);
+  // "network" = servidor/conexão fora — oferece retry (o caso do preview
+  // local derrubado que confundiu na aprovação).
+  const [state, setState] = useState<{
+    src: string | null;
+    error: "unavailable" | "network" | null;
+  }>({ src: null, error: null });
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let alive = true;
+    setState({ src: null, error: null });
     const q = new URLSearchParams({
       ad_id: adId,
       workspace_id: hmac.workspace_id,
@@ -483,17 +488,24 @@ function AdPreviewModal({
       signature: hmac.signature,
     });
     fetch(`/api/ads/preview?${q}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((j: { src?: string }) => {
-        if (alive) setState({ src: j.src ?? null, error: !j.src });
+      .then((r) => {
+        if (!r.ok) throw new Error(r.status === 404 ? "unavailable" : "network");
+        return r.json();
       })
-      .catch(() => {
-        if (alive) setState({ src: null, error: true });
+      .then((j: { src?: string }) => {
+        if (alive) setState({ src: j.src ?? null, error: j.src ? null : "unavailable" });
+      })
+      .catch((e: unknown) => {
+        if (alive)
+          setState({
+            src: null,
+            error: e instanceof Error && e.message === "unavailable" ? "unavailable" : "network",
+          });
       });
     return () => {
       alive = false;
     };
-  }, [adId, hmac]);
+  }, [adId, hmac, attempt]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -540,7 +552,7 @@ function AdPreviewModal({
               className="h-[600px] w-full border-0"
               sandbox="allow-scripts allow-same-origin allow-popups"
             />
-          ) : state.error ? (
+          ) : state.error === "unavailable" ? (
             <div className="flex h-[420px] flex-col items-center justify-center gap-2 px-6 text-center">
               <span className="text-2xl">🚫</span>
               <span className="text-xs font-semibold text-[color:var(--foreground)]">
@@ -549,6 +561,23 @@ function AdPreviewModal({
               <span className="text-[11px] text-[color:var(--muted-foreground)]">
                 O Meta não gerou o preview deste anúncio (pode ter sido apagado ou estar em revisão).
               </span>
+            </div>
+          ) : state.error === "network" ? (
+            <div className="flex h-[420px] flex-col items-center justify-center gap-2 px-6 text-center">
+              <span className="text-2xl">📡</span>
+              <span className="text-xs font-semibold text-[color:var(--foreground)]">
+                Falha de conexão
+              </span>
+              <span className="text-[11px] text-[color:var(--muted-foreground)]">
+                Não foi possível carregar o preview agora. Verifique a conexão e tente de novo.
+              </span>
+              <button
+                type="button"
+                onClick={() => setAttempt((a) => a + 1)}
+                className="mt-2 rounded-full bg-[color:var(--primary)] px-4 py-1.5 text-[11px] font-bold text-white transition-opacity hover:opacity-90"
+              >
+                Tentar de novo
+              </button>
             </div>
           ) : (
             <div className="flex h-[420px] items-center justify-center">
