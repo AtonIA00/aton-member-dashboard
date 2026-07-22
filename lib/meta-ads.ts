@@ -36,7 +36,11 @@ export type MetaAdInsight = {
   metaCpl: number | null;
   /** Thumbnail do criativo (CDN da Meta, URL assinada — expira; cache 15min mantém fresca). */
   thumbnailUrl: string | null;
+  /** Formato do criativo — decide o badge (▶ vídeo / ⧉ carrossel) na tabela. */
+  format: CreativeFormat;
 };
+
+export type CreativeFormat = "video" | "carousel" | "image";
 
 export type MetaAdsData = {
   actId: string;
@@ -101,18 +105,25 @@ function pickLead(list: Array<{ action_type?: string; value?: string }> | undefi
 }
 
 /**
- * Thumbnails dos criativos em batch (`?ids=` aceita até 50 por chamada).
- * Cosmético: qualquer falha degrada pra tabela sem imagem — nunca derruba
- * os dados de custo. Os ids vêm dos insights da própria conta, então existem.
+ * Thumbnails + formato dos criativos em batch (`?ids=` aceita até 50 por
+ * chamada). Cosmético: qualquer falha degrada pra tabela sem imagem — nunca
+ * derruba os dados de custo. Os ids vêm dos insights da conta, então existem.
  */
-async function fetchCreativeThumbs(adIds: string[], token: string): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
+type CreativeMeta = { thumb: string | null; format: CreativeFormat };
+
+async function fetchCreativeThumbs(
+  adIds: string[],
+  token: string,
+): Promise<Map<string, CreativeMeta>> {
+  const out = new Map<string, CreativeMeta>();
+  const fields =
+    "creative.thumbnail_width(256).thumbnail_height(256)" +
+    "{thumbnail_url,video_id,object_story_spec{video_data{video_id},link_data{child_attachments{link}}}}";
   for (let i = 0; i < adIds.length; i += 50) {
     const chunk = adIds.slice(i, i + 50);
     const url =
       `https://graph.facebook.com/v21.0/?ids=${chunk.join(",")}` +
-      `&fields=creative.thumbnail_width(256).thumbnail_height(256){thumbnail_url}` +
-      `&access_token=${encodeURIComponent(token)}`;
+      `&fields=${fields}&access_token=${encodeURIComponent(token)}`;
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -121,11 +132,26 @@ async function fetchCreativeThumbs(adIds: string[], token: string): Promise<Map<
       if (!res.ok) continue;
       const json = (await res.json()) as Record<
         string,
-        { creative?: { thumbnail_url?: string } }
+        {
+          creative?: {
+            thumbnail_url?: string;
+            video_id?: string;
+            object_story_spec?: {
+              video_data?: { video_id?: string };
+              link_data?: { child_attachments?: unknown[] };
+            };
+          };
+        }
       >;
       for (const [id, v] of Object.entries(json)) {
-        const thumb = v?.creative?.thumbnail_url;
-        if (thumb) out.set(id, thumb);
+        const c = v?.creative;
+        if (!c) continue;
+        const isVideo = Boolean(c.video_id || c.object_story_spec?.video_data?.video_id);
+        const isCarousel = (c.object_story_spec?.link_data?.child_attachments?.length ?? 0) >= 2;
+        out.set(id, {
+          thumb: c.thumbnail_url ?? null,
+          format: isVideo ? "video" : isCarousel ? "carousel" : "image",
+        });
       }
     } catch {
       // segue sem thumbs deste chunk
@@ -212,6 +238,7 @@ export async function getMetaAdsForWorkspace(
           metaLeads: pickLead(actions) ?? 0,
           metaCpl: pickLead(cpa),
           thumbnailUrl: null,
+          format: "image",
         };
         byAdId.set(adId, insight);
         currency = (r.account_currency as string) || currency;
@@ -232,9 +259,12 @@ export async function getMetaAdsForWorkspace(
 
   if (byAdId.size > 0) {
     const thumbs = await fetchCreativeThumbs([...byAdId.keys()], token);
-    for (const [id, thumb] of thumbs) {
+    for (const [id, meta] of thumbs) {
       const insight = byAdId.get(id);
-      if (insight) insight.thumbnailUrl = thumb;
+      if (insight) {
+        insight.thumbnailUrl = meta.thumb;
+        insight.format = meta.format;
+      }
     }
   }
 
@@ -262,19 +292,102 @@ export type MetaAdsForTable = {
   avgCtr: number; // clicks/impressions*100 (ponderado)
   avgCpc: number; // spend/clicks
   /**
-   * por ad_id: [spend, ctr, cpc, cpm, adName, thumbnailUrl, campaignName] —
-   * métricas de mídia + identidade visual do criativo (nada de leads do Meta).
+   * por ad_id: [spend, ctr, cpc, cpm, adName, thumbnailUrl, campaignName,
+   * format] — métricas de mídia + identidade visual (nada de leads do Meta).
    */
   ads: Record<
     string,
-    [number, number, number, number, string | null, string | null, string | null]
+    [
+      number,
+      number,
+      number,
+      number,
+      string | null,
+      string | null,
+      string | null,
+      CreativeFormat,
+    ]
   >;
 };
+
+// ── Preview oficial do anúncio (Ad Preview API) ─────────────────────────────
+// Devolve o src do iframe da Meta que renderiza o anúncio REAL — vídeo
+// tocável, carrossel navegável. Validado: renderiza sem login no Facebook e
+// sem bloqueio de framing (X-Frame-Options/frame-ancestors ausentes).
+// O src expira (~24h) → cache 30min. MOBILE_FEED_STANDARD porque as
+// campanhas dos assinantes são mobile/WhatsApp; fallback DESKTOP.
+const previewCache = new Map<string, { ts: number; src: string }>();
+const PREVIEW_TTL = 30 * 60_000;
+
+export async function getAdPreviewForWorkspace(
+  workspaceId: string,
+  adId: string,
+): Promise<{ src: string } | null> {
+  if (!isMetaAdsEnabled()) return null;
+  const token = process.env.META_SYSTEM_USER_TOKEN;
+  if (!token) return null;
+  if (!/^\d{5,25}$/.test(adId)) return null;
+
+  const account = await getAccountForWorkspace(workspaceId);
+  if (!account) return null;
+
+  const now = Date.now();
+  const hit = previewCache.get(adId);
+  if (hit && now - hit.ts < PREVIEW_TTL) return { src: hit.src };
+
+  try {
+    // Escopo por tenant: o anúncio precisa pertencer à conta DESTE workspace
+    // (impede sondar previews de outros assinantes com uma sessão válida).
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const owner = (await (
+      await fetch(
+        `https://graph.facebook.com/v21.0/${adId}?fields=account_id&access_token=${encodeURIComponent(token)}`,
+        { cache: "no-store", signal: controller.signal },
+      )
+    ).json()) as { account_id?: string; error?: unknown };
+    clearTimeout(timer);
+    if (!owner.account_id || `act_${owner.account_id}` !== account.act_id) return null;
+
+    for (const fmt of ["MOBILE_FEED_STANDARD", "DESKTOP_FEED_STANDARD"]) {
+      const c2 = new AbortController();
+      const t2 = setTimeout(() => c2.abort(), TIMEOUT_MS);
+      const res = await fetch(
+        `https://graph.facebook.com/v21.0/${adId}/previews?ad_format=${fmt}&access_token=${encodeURIComponent(token)}`,
+        { cache: "no-store", signal: c2.signal },
+      );
+      clearTimeout(t2);
+      if (!res.ok) continue;
+      const json = (await res.json()) as { data?: Array<{ body?: string }> };
+      const body = (json.data?.[0]?.body ?? "").replace(/&amp;/g, "&");
+      const src = /src="([^"]+)"/.exec(body)?.[1];
+      if (src && src.startsWith("https://")) {
+        previewCache.set(adId, { ts: now, src });
+        return { src };
+      }
+    }
+  } catch (e) {
+    console.error("[meta-ads] preview falhou", {
+      adId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+  return null;
+}
 
 export function toTablePayload(d: MetaAdsData): MetaAdsForTable {
   const ads: MetaAdsForTable["ads"] = {};
   for (const [id, a] of d.byAdId) {
-    ads[id] = [a.spend, a.ctr, a.cpc, a.cpm, a.adName, a.thumbnailUrl, a.campaignName];
+    ads[id] = [
+      a.spend,
+      a.ctr,
+      a.cpc,
+      a.cpm,
+      a.adName,
+      a.thumbnailUrl,
+      a.campaignName,
+      a.format,
+    ];
   }
   return {
     currency: d.currency,

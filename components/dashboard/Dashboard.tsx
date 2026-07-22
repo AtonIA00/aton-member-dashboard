@@ -300,6 +300,7 @@ function DashboardContent({
               metaAds={metaAds}
               kpis={data.kpis}
               filtersActive={filtersActive}
+              hmac={hmac}
             />
           </div>
 

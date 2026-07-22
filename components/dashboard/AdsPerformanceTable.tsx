@@ -1,9 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AdsPerfRow, Kpis } from "@/lib/leads";
 import type { Delta } from "@/lib/deltas";
 import type { MetaAdsForTable } from "@/lib/meta-ads";
+
+type HmacParams = {
+  workspace_id: string;
+  user_id: string;
+  timestamp: string;
+  signature: string;
+};
 
 type Props = {
   rows: AdsPerfRow[];
@@ -14,6 +21,8 @@ type Props = {
   /** Filtros ativos → resumo de custo é ocultado (spend é da conta inteira;
    *  comparar com KPIs filtrados distorceria os R$/lead). */
   filtersActive: boolean;
+  /** Params assinados do iframe — auth do /api/ads/preview (modal do criativo). */
+  hmac: HmacParams;
 };
 
 type SortCol =
@@ -74,7 +83,7 @@ const PCT_AGEND_THRESHOLDS: [number, number, number] = [4, 9, 15];
 const PCT_MQL_THRESHOLDS: [number, number, number] = [10, 20, 30];
 const PCT_INTERACAO_THRESHOLDS: [number, number, number] = [50, 65, 75];
 
-export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive }: Props) {
+export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive, hmac }: Props) {
   const [sortCol, setSortCol] = useState<SortCol>("total");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -216,7 +225,7 @@ export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive }: Prop
                       Sem ID
                     </span>
                   ) : (
-                    <AdIdentity idAnuncio={r.idAnuncio} meta={adOf(r)} />
+                    <AdIdentity idAnuncio={r.idAnuncio} meta={adOf(r)} hmac={hmac} />
                   )}
                 </td>
                 <td className="px-4 py-3 text-right text-sm tabular-nums text-[color:var(--foreground)]">
@@ -322,13 +331,25 @@ type AdTuple = MetaAdsForTable["ads"][string];
 
 // ── Identidade do anúncio: thumb do criativo + nome + ID ────────────────────
 // Reconhecimento em 3 camadas (padrão Ads Manager): imagem → nome → ID.
-// Hover no thumb abre preview ampliado em position:fixed (escapa do clipping
-// do container com overflow). Sem identidade no Meta → só o ID, como antes.
-function AdIdentity({ idAnuncio, meta }: { idAnuncio: string; meta: AdTuple | undefined }) {
+// Hover no thumb → preview rápido (position:fixed escapa do clipping do
+// overflow). CLIQUE no thumb → modal com o anúncio REAL via Ad Preview API
+// (vídeo tocável, carrossel navegável). Badge no thumb indica o formato.
+// Sem identidade no Meta → só o ID, como antes.
+function AdIdentity({
+  idAnuncio,
+  meta,
+  hmac,
+}: {
+  idAnuncio: string;
+  meta: AdTuple | undefined;
+  hmac: HmacParams;
+}) {
   const [preview, setPreview] = useState<{ x: number; y: number } | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
   const name = meta?.[4] ?? null;
   const thumb = meta?.[5] ?? null;
   const campaign = meta?.[6] ?? null;
+  const format = meta?.[7] ?? "image";
 
   if (!name && !thumb) {
     return <span className="font-mono">{idAnuncio}</span>;
@@ -337,17 +358,44 @@ function AdIdentity({ idAnuncio, meta }: { idAnuncio: string; meta: AdTuple | un
   return (
     <div className="flex items-center gap-2.5">
       {thumb ? (
-        <img
-          src={thumb}
-          alt={name ?? "Criativo do anúncio"}
-          referrerPolicy="no-referrer"
-          className="h-10 w-10 shrink-0 cursor-zoom-in rounded-lg object-cover ring-1 ring-[color:var(--border)]"
+        <button
+          type="button"
+          title={format === "video" ? "Reproduzir o anúncio" : "Ver o anúncio como publicado"}
+          className="relative shrink-0 cursor-pointer rounded-lg outline-none transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-[color:var(--primary)]/50"
+          onClick={() => {
+            setPreview(null);
+            setModalOpen(true);
+          }}
           onMouseEnter={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             setPreview({ x: r.right + 12, y: r.top - 8 });
           }}
           onMouseLeave={() => setPreview(null)}
-        />
+        >
+          <img
+            src={thumb}
+            alt={name ?? "Criativo do anúncio"}
+            referrerPolicy="no-referrer"
+            className="h-10 w-10 rounded-lg object-cover ring-1 ring-[color:var(--border)]"
+          />
+          {format === "video" && (
+            <span className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/25">
+              <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white/90 shadow">
+                <svg width="8" height="8" viewBox="0 0 10 10" className="translate-x-[0.5px]">
+                  <path d="M2 1.2v7.6c0 .5.55.8.98.55l6.06-3.8a.65.65 0 0 0 0-1.1L2.98.65A.65.65 0 0 0 2 1.2Z" fill="#111" />
+                </svg>
+              </span>
+            </span>
+          )}
+          {format === "carousel" && (
+            <span className="absolute bottom-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded bg-black/55 text-white shadow">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                <rect x="3" y="7" width="13" height="13" rx="2" />
+                <path d="M8 3h11a2 2 0 0 1 2 2v11" />
+              </svg>
+            </span>
+          )}
+        </button>
       ) : (
         <div
           aria-hidden
@@ -385,9 +433,130 @@ function AdIdentity({ idAnuncio, meta }: { idAnuncio: string; meta: AdTuple | un
             {campaign && (
               <div className="truncate text-[10px] text-[color:var(--muted-foreground)]">{campaign}</div>
             )}
+            <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-[color:var(--primary)]">
+              {format === "video" ? "▶ clique para reproduzir" : "clique para ver o anúncio"}
+            </div>
           </div>
         </div>
       )}
+      {modalOpen && (
+        <AdPreviewModal
+          adId={idAnuncio}
+          name={name}
+          campaign={campaign}
+          hmac={hmac}
+          onClose={() => setModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Modal com o anúncio real (Ad Preview API) ───────────────────────────────
+// O iframe da Meta renderiza o anúncio como publicado: vídeo com play,
+// carrossel com setas. Fecha por backdrop, ✕ ou Esc.
+function AdPreviewModal({
+  adId,
+  name,
+  campaign,
+  hmac,
+  onClose,
+}: {
+  adId: string;
+  name: string | null;
+  campaign: string | null;
+  hmac: HmacParams;
+  onClose: () => void;
+}) {
+  const [state, setState] = useState<{ src: string | null; error: boolean }>({
+    src: null,
+    error: false,
+  });
+
+  useEffect(() => {
+    let alive = true;
+    const q = new URLSearchParams({
+      ad_id: adId,
+      workspace_id: hmac.workspace_id,
+      user_id: hmac.user_id,
+      timestamp: hmac.timestamp,
+      signature: hmac.signature,
+    });
+    fetch(`/api/ads/preview?${q}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((j: { src?: string }) => {
+        if (alive) setState({ src: j.src ?? null, error: !j.src });
+      })
+      .catch(() => {
+        if (alive) setState({ src: null, error: true });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [adId, hmac]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[92vh] w-full max-w-[400px] flex-col overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3 border-b border-[color:var(--border)] px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-bold text-[color:var(--foreground)]">
+              {name ?? adId}
+            </div>
+            <div className="truncate text-[11px] text-[color:var(--muted-foreground)]">
+              {campaign ?? `ID ${adId}`} · como publicado no Meta
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar"
+            className="rounded-full p-1.5 text-[color:var(--muted-foreground)] transition-colors hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)]"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="min-h-[420px] flex-1 overflow-auto bg-[#f0f2f5] dark:bg-[#18191a]">
+          {state.src ? (
+            <iframe
+              src={state.src}
+              title={name ?? "Preview do anúncio"}
+              className="h-[600px] w-full border-0"
+              sandbox="allow-scripts allow-same-origin allow-popups"
+            />
+          ) : state.error ? (
+            <div className="flex h-[420px] flex-col items-center justify-center gap-2 px-6 text-center">
+              <span className="text-2xl">🚫</span>
+              <span className="text-xs font-semibold text-[color:var(--foreground)]">
+                Preview indisponível
+              </span>
+              <span className="text-[11px] text-[color:var(--muted-foreground)]">
+                O Meta não gerou o preview deste anúncio (pode ter sido apagado ou estar em revisão).
+              </span>
+            </div>
+          ) : (
+            <div className="flex h-[420px] items-center justify-center">
+              <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-[color:var(--border)] border-t-[color:var(--primary)]" />
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
