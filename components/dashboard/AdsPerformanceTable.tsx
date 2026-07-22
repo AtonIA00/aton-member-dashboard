@@ -63,9 +63,16 @@ function heatClass(v: number, thresholds: [number, number, number]): string {
   return "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300";
 }
 
-const PCT_AGEND_THRESHOLDS: [number, number, number] = [5, 15, 30];
-const PCT_MQL_THRESHOLDS: [number, number, number] = [10, 30, 50];
-const PCT_INTERACAO_THRESHOLDS: [number, number, number] = [30, 60, 80];
+// Faixas de cor ancoradas nos QUARTIS reais do portfólio Aton, não em metas
+// abstratas. Cor = posição do assinante vs. a carteira:
+//   🔴 pior 25% · 🟠 abaixo da mediana · 🟡 acima da mediana · 🟢 top 25%
+// Calibrado em 2026-07-22 sobre 31 workspaces com ≥50 leads (percentis p25/
+// p50/p75): interação 50/66/74 · MQL 11/20/30 · conversão 4/9/14. Recalibrar
+// semestralmente conforme a carteira evolui. Os cortes antigos ([_,_,30]/[_,_,
+// 50]/[_,_,80]) eram inatingíveis — quase ninguém ficava verde.
+const PCT_AGEND_THRESHOLDS: [number, number, number] = [4, 9, 15];
+const PCT_MQL_THRESHOLDS: [number, number, number] = [10, 20, 30];
+const PCT_INTERACAO_THRESHOLDS: [number, number, number] = [50, 65, 75];
 
 export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive }: Props) {
   const [sortCol, setSortCol] = useState<SortCol>("total");
