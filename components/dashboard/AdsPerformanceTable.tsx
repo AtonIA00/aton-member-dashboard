@@ -78,7 +78,7 @@ export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive }: Prop
   const [sortCol, setSortCol] = useState<SortCol>("total");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  // Lookup de insight por anúncio ([spend, ctr, cpc, cpm, metaLeads, metaCpl]).
+  // Lookup por anúncio ([spend, ctr, cpc, cpm, adName, thumbUrl, campaignName]).
   const adOf = (r: AdsPerfRow) => (metaAds ? metaAds.ads[r.idAnuncio] : undefined);
 
   const sorted = useMemo(() => {
@@ -165,7 +165,7 @@ export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive }: Prop
                 #
               </Th>
               <Th col="id" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="left">
-                ID Anúncio
+                {metaAds ? "Anúncio" : "ID Anúncio"}
               </Th>
               <Th col="agendados" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
                 Agendados
@@ -210,13 +210,13 @@ export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive }: Prop
                 <td className="px-4 py-3 text-xs text-[color:var(--muted-foreground)]">
                   {r.isUnknownId ? "—" : r.rank}
                 </td>
-                <td className="max-w-[260px] truncate px-4 py-3 font-mono text-xs text-[color:var(--foreground)]">
+                <td className="max-w-[280px] px-4 py-2 text-xs text-[color:var(--foreground)]">
                   {r.isUnknownId ? (
-                    <span className="italic text-[color:var(--muted-foreground)]/80">
+                    <span className="font-mono italic text-[color:var(--muted-foreground)]/80">
                       Sem ID
                     </span>
                   ) : (
-                    r.idAnuncio
+                    <AdIdentity idAnuncio={r.idAnuncio} meta={adOf(r)} />
                   )}
                 </td>
                 <td className="px-4 py-3 text-right text-sm tabular-nums text-[color:var(--foreground)]">
@@ -318,12 +318,86 @@ function CostSummaryStrip({ metaAds, kpis }: { metaAds: MetaAdsForTable; kpis: K
 }
 
 // ── Células Meta por linha ([spend, ctr, cpc, cpm, metaLeads, metaCpl]) ──────
+type AdTuple = MetaAdsForTable["ads"][string];
+
+// ── Identidade do anúncio: thumb do criativo + nome + ID ────────────────────
+// Reconhecimento em 3 camadas (padrão Ads Manager): imagem → nome → ID.
+// Hover no thumb abre preview ampliado em position:fixed (escapa do clipping
+// do container com overflow). Sem identidade no Meta → só o ID, como antes.
+function AdIdentity({ idAnuncio, meta }: { idAnuncio: string; meta: AdTuple | undefined }) {
+  const [preview, setPreview] = useState<{ x: number; y: number } | null>(null);
+  const name = meta?.[4] ?? null;
+  const thumb = meta?.[5] ?? null;
+  const campaign = meta?.[6] ?? null;
+
+  if (!name && !thumb) {
+    return <span className="font-mono">{idAnuncio}</span>;
+  }
+
+  return (
+    <div className="flex items-center gap-2.5">
+      {thumb ? (
+        <img
+          src={thumb}
+          alt={name ?? "Criativo do anúncio"}
+          referrerPolicy="no-referrer"
+          className="h-10 w-10 shrink-0 cursor-zoom-in rounded-lg object-cover ring-1 ring-[color:var(--border)]"
+          onMouseEnter={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setPreview({ x: r.right + 12, y: r.top - 8 });
+          }}
+          onMouseLeave={() => setPreview(null)}
+        />
+      ) : (
+        <div
+          aria-hidden
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[color:var(--muted)]/60 ring-1 ring-[color:var(--border)] text-[color:var(--muted-foreground)]/50"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="18" height="18" rx="3" />
+            <circle cx="9" cy="9" r="2" />
+            <path d="m21 15-4.5-4.5L7 20" />
+          </svg>
+        </div>
+      )}
+      <div className="min-w-0">
+        <div
+          className="max-w-[200px] truncate text-xs font-semibold text-[color:var(--foreground)]"
+          title={campaign && name ? `${name} — ${campaign}` : (name ?? undefined)}
+        >
+          {name ?? idAnuncio}
+        </div>
+        <div className="font-mono text-[10px] leading-tight text-[color:var(--muted-foreground)]/70">
+          {idAnuncio}
+        </div>
+      </div>
+      {preview && thumb && (
+        <div
+          className="pointer-events-none fixed z-50 w-60 overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] shadow-2xl"
+          style={{
+            left: Math.min(preview.x, window.innerWidth - 260),
+            top: Math.max(8, Math.min(preview.y, window.innerHeight - 316)),
+          }}
+        >
+          <img src={thumb} alt="" referrerPolicy="no-referrer" className="h-60 w-60 object-cover" />
+          <div className="px-2.5 py-2">
+            <div className="truncate text-[11px] font-bold text-[color:var(--foreground)]">{name}</div>
+            {campaign && (
+              <div className="truncate text-[10px] text-[color:var(--muted-foreground)]">{campaign}</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MetaCells({
   ad,
   row,
   currency,
 }: {
-  ad: [number, number, number, number] | undefined;
+  ad: AdTuple | undefined;
   row: AdsPerfRow;
   currency: string;
 }) {

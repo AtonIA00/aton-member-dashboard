@@ -34,6 +34,8 @@ export type MetaAdInsight = {
   metaLeads: number;
   /** CPL segundo o Meta (cost_per_action_type do lead). */
   metaCpl: number | null;
+  /** Thumbnail do criativo (CDN da Meta, URL assinada — expira; cache 15min mantém fresca). */
+  thumbnailUrl: string | null;
 };
 
 export type MetaAdsData = {
@@ -96,6 +98,40 @@ function pickLead(list: Array<{ action_type?: string; value?: string }> | undefi
     if (hit) return num(hit.value);
   }
   return null;
+}
+
+/**
+ * Thumbnails dos criativos em batch (`?ids=` aceita até 50 por chamada).
+ * Cosmético: qualquer falha degrada pra tabela sem imagem — nunca derruba
+ * os dados de custo. Os ids vêm dos insights da própria conta, então existem.
+ */
+async function fetchCreativeThumbs(adIds: string[], token: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (let i = 0; i < adIds.length; i += 50) {
+    const chunk = adIds.slice(i, i + 50);
+    const url =
+      `https://graph.facebook.com/v21.0/?ids=${chunk.join(",")}` +
+      `&fields=creative.thumbnail_width(256).thumbnail_height(256){thumbnail_url}` +
+      `&access_token=${encodeURIComponent(token)}`;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      const res = await fetch(url, { cache: "no-store", signal: controller.signal });
+      clearTimeout(timer);
+      if (!res.ok) continue;
+      const json = (await res.json()) as Record<
+        string,
+        { creative?: { thumbnail_url?: string } }
+      >;
+      for (const [id, v] of Object.entries(json)) {
+        const thumb = v?.creative?.thumbnail_url;
+        if (thumb) out.set(id, thumb);
+      }
+    } catch {
+      // segue sem thumbs deste chunk
+    }
+  }
+  return out;
 }
 
 /**
@@ -175,6 +211,7 @@ export async function getMetaAdsForWorkspace(
           cpm: num(r.cpm),
           metaLeads: pickLead(actions) ?? 0,
           metaCpl: pickLead(cpa),
+          thumbnailUrl: null,
         };
         byAdId.set(adId, insight);
         currency = (r.account_currency as string) || currency;
@@ -191,6 +228,14 @@ export async function getMetaAdsForWorkspace(
       error: e instanceof Error ? e.message : String(e),
     });
     return null;
+  }
+
+  if (byAdId.size > 0) {
+    const thumbs = await fetchCreativeThumbs([...byAdId.keys()], token);
+    for (const [id, thumb] of thumbs) {
+      const insight = byAdId.get(id);
+      if (insight) insight.thumbnailUrl = thumb;
+    }
   }
 
   const data: MetaAdsData = {
@@ -216,14 +261,20 @@ export type MetaAdsForTable = {
   totalSpend: number;
   avgCtr: number; // clicks/impressions*100 (ponderado)
   avgCpc: number; // spend/clicks
-  /** por ad_id: [spend, ctr, cpc, cpm] — só métricas de mídia. */
-  ads: Record<string, [number, number, number, number]>;
+  /**
+   * por ad_id: [spend, ctr, cpc, cpm, adName, thumbnailUrl, campaignName] —
+   * métricas de mídia + identidade visual do criativo (nada de leads do Meta).
+   */
+  ads: Record<
+    string,
+    [number, number, number, number, string | null, string | null, string | null]
+  >;
 };
 
 export function toTablePayload(d: MetaAdsData): MetaAdsForTable {
   const ads: MetaAdsForTable["ads"] = {};
   for (const [id, a] of d.byAdId) {
-    ads[id] = [a.spend, a.ctr, a.cpc, a.cpm];
+    ads[id] = [a.spend, a.ctr, a.cpc, a.cpm, a.adName, a.thumbnailUrl, a.campaignName];
   }
   return {
     currency: d.currency,
