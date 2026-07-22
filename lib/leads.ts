@@ -59,6 +59,8 @@ export type AdsPerfRow = {
   rank: number;
   idAnuncio: string;
   agendados: number;
+  /** MQL "sim" absolutos do anúncio (pro cruzamento custo/MQL com Meta Ads). */
+  mqlSim: number;
   pctAgendamento: number;
   pctMql: number;
   pctInteracao: number;
@@ -450,6 +452,7 @@ export function computeAdsPerformance(leads: LeadRow[]): AdsPerfRow[] {
       rank: 0,
       idAnuncio: b.idAnuncio,
       agendados: b.agendados,
+      mqlSim: b.mqlSim,
       pctAgendamento: safeDiv(b.agendados, b.total),
       pctMql: safeDiv(b.mqlSim, b.total),
       pctInteracao: safeDiv(interagiram, b.total),

@@ -21,6 +21,7 @@ import { TonView } from "@/components/ton/TonView";
 import { AtonLogo } from "@/components/brand/AtonLogo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { RetornoComercialSection } from "./RetornoComercialSection";
+import { getMetaAdsForWorkspace, toTablePayload, type MetaAdsForTable } from "@/lib/meta-ads";
 
 type HmacParams = {
   workspace_id: string;
@@ -110,6 +111,21 @@ export async function Dashboard({
         throw wrapped;
       });
 
+  // Meta Ads (custo × desfecho) — em PARALELO com o agregado de leads.
+  // null quando flag off / workspace sem conta vinculada / erro (degrada
+  // silencioso: o dash renderiza sem a camada de custo).
+  const metaAdsPromise = isTonTab
+    ? Promise.resolve(null)
+    : getMetaAdsForWorkspace(workspaceId, resolvePeriod(periodKey, customFrom, customTo))
+        .then((d) => (d ? toTablePayload(d) : null))
+        .catch((e) => {
+          console.error("[dashboard] meta-ads falhou (seguindo sem custo)", {
+            workspaceId,
+            error: e instanceof Error ? e.message : String(e),
+          });
+          return null;
+        });
+
   return (
     <main className="relative min-h-screen overflow-hidden">
       <div
@@ -176,6 +192,7 @@ export async function Dashboard({
           dashboardDataPromise && (
             <DashboardContent
               data={await dashboardDataPromise}
+              metaAds={await metaAdsPromise}
               workspaceName={workspaceName}
               periodKey={periodKey}
               customFrom={customFrom}
@@ -201,6 +218,7 @@ export async function Dashboard({
 
 type DashboardContentProps = {
   data: Awaited<ReturnType<typeof getDashboardData>>;
+  metaAds: MetaAdsForTable | null;
   workspaceName: string;
   periodKey: PeriodKey;
   customFrom?: string;
@@ -214,6 +232,7 @@ type DashboardContentProps = {
 
 function DashboardContent({
   data,
+  metaAds,
   workspaceName,
   periodKey,
   customFrom,
@@ -276,7 +295,12 @@ function DashboardContent({
             <Funnel steps={data.funnel} />
           </div>
           <div className="mt-8">
-            <AdsPerformanceTable rows={data.adsPerformance} />
+            <AdsPerformanceTable
+              rows={data.adsPerformance}
+              metaAds={metaAds}
+              kpis={data.kpis}
+              filtersActive={filtersActive}
+            />
           </div>
 
           <section aria-label="Análise visual" className="mt-10">

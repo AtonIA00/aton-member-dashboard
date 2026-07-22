@@ -1,10 +1,20 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { AdsPerfRow } from "@/lib/leads";
+import type { AdsPerfRow, Kpis } from "@/lib/leads";
 import type { Delta } from "@/lib/deltas";
+import type { MetaAdsForTable } from "@/lib/meta-ads";
 
-type Props = { rows: AdsPerfRow[] };
+type Props = {
+  rows: AdsPerfRow[];
+  /** Insights do Meta Ads (null = flag off / sem conta vinculada / erro). */
+  metaAds: MetaAdsForTable | null;
+  /** KPIs do recorte — base do resumo custo × desfecho. */
+  kpis: Kpis;
+  /** Filtros ativos → resumo de custo é ocultado (spend é da conta inteira;
+   *  comparar com KPIs filtrados distorceria os R$/lead). */
+  filtersActive: boolean;
+};
 
 type SortCol =
   | "rank"
@@ -13,11 +23,27 @@ type SortCol =
   | "pctAgend"
   | "pctMql"
   | "pctInteracao"
-  | "total";
+  | "total"
+  | "spend";
 type SortDir = "asc" | "desc";
 
 function pct(n: number): string {
   return (n * 100).toFixed(1).replace(".", ",") + "%";
+}
+
+function fmtMoney(v: number, currency = "BRL"): string {
+  return v.toLocaleString("pt-BR", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+/** R$ por desfecho — "—" quando não há desfecho (divisão por zero). */
+function fmtCostPer(spend: number, count: number, currency: string): string {
+  if (count <= 0) return "—";
+  return fmtMoney(spend / count, currency);
 }
 
 // Heat pills com contraste em ambos os temas. Light usa tons -700 sobre bg
@@ -41,9 +67,12 @@ const PCT_AGEND_THRESHOLDS: [number, number, number] = [5, 15, 30];
 const PCT_MQL_THRESHOLDS: [number, number, number] = [10, 30, 50];
 const PCT_INTERACAO_THRESHOLDS: [number, number, number] = [30, 60, 80];
 
-export function AdsPerformanceTable({ rows }: Props) {
+export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive }: Props) {
   const [sortCol, setSortCol] = useState<SortCol>("total");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  // Lookup de insight por anúncio ([spend, ctr, cpc, cpm, metaLeads, metaCpl]).
+  const adOf = (r: AdsPerfRow) => (metaAds ? metaAds.ads[r.idAnuncio] : undefined);
 
   const sorted = useMemo(() => {
     // Sempre manter "Sem ID" (isUnknownId) no topo, conforme spec.
@@ -64,13 +93,18 @@ export function AdsPerformanceTable({ rows }: Props) {
           return (a.pctMql - b.pctMql) * dir;
         case "pctInteracao":
           return (a.pctInteracao - b.pctInteracao) * dir;
+        case "spend": {
+          const sa = metaAds?.ads[a.idAnuncio]?.[0] ?? -1;
+          const sb = metaAds?.ads[b.idAnuncio]?.[0] ?? -1;
+          return (sa - sb) * dir;
+        }
         case "total":
         default:
           return (a.total - b.total) * dir;
       }
     });
     return [...unknown, ...known];
-  }, [rows, sortCol, sortDir]);
+  }, [rows, sortCol, sortDir, metaAds]);
 
   function toggle(col: SortCol) {
     if (col === sortCol) {
@@ -101,8 +135,20 @@ export function AdsPerformanceTable({ rows }: Props) {
         </h2>
         <span className="ml-auto text-[11px] text-[color:var(--muted-foreground)]/70">
           {rows.length} {rows.length === 1 ? "anúncio" : "anúncios"}
+          {metaAds && (
+            <span className="ml-2 rounded-full bg-[color:var(--primary)]/10 px-2 py-0.5 text-[10px] font-bold text-[color:var(--primary)]">
+              + Meta Ads
+            </span>
+          )}
         </span>
       </div>
+
+      {/* Resumo custo × desfecho (investimento da conta ÷ desfechos da base).
+          Oculto com filtros ativos: o spend é da conta INTEIRA no período —
+          dividir por KPIs filtrados inflaria os custos artificialmente. */}
+      {metaAds && !filtersActive && (
+        <CostSummaryStrip metaAds={metaAds} kpis={kpis} />
+      )}
 
       <div className="max-h-[460px] overflow-auto">
         <table className="w-full border-collapse text-sm">
@@ -126,6 +172,23 @@ export function AdsPerformanceTable({ rows }: Props) {
               <Th col="pctInteracao" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
                 % Interação
               </Th>
+              {metaAds && (
+                <>
+                  <Th col="spend" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
+                    Invest.
+                  </Th>
+                  <ThPlain align="right">CTR</ThPlain>
+                  <ThPlain align="right" title="Investimento ÷ leads desta base">
+                    CPL
+                  </ThPlain>
+                  <ThPlain align="right" title="Investimento ÷ MQLs">
+                    R$/MQL
+                  </ThPlain>
+                  <ThPlain align="right" title="Investimento ÷ convertidos">
+                    R$/Conv.
+                  </ThPlain>
+                </>
+              )}
               <Th col="total" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
                 Total
               </Th>
@@ -164,6 +227,13 @@ export function AdsPerformanceTable({ rows }: Props) {
                   <HeatPill v={r.pctInteracao} thresholds={PCT_INTERACAO_THRESHOLDS} />
                   {r.pctInteracaoDelta && <DeltaLine delta={r.pctInteracaoDelta} />}
                 </td>
+                {metaAds && (
+                  <MetaCells
+                    ad={adOf(r)}
+                    row={r}
+                    currency={metaAds.currency}
+                  />
+                )}
                 <td className="px-4 py-3 text-right font-bold tabular-nums text-[color:var(--foreground)]">
                   <div>{r.total.toLocaleString("pt-BR")}</div>
                   {r.totalDelta && <DeltaLine delta={r.totalDelta} />}
@@ -173,7 +243,137 @@ export function AdsPerformanceTable({ rows }: Props) {
           </tbody>
         </table>
       </div>
+
+      {metaAds && (
+        <div className="border-t border-[color:var(--border)] px-6 py-2 text-[10px] leading-relaxed text-[color:var(--muted-foreground)]/70">
+          Investimento e CTR via <strong className="font-semibold">Meta Ads</strong> (conta vinculada, mesmo período do filtro).
+          CPL, R$/MQL e R$/Conv. usam os leads <strong className="font-semibold">desta base</strong> — podem diferir do CPL da plataforma.
+          Anúncios sem investimento no período aparecem com “—”.
+        </div>
+      )}
     </div>
+  );
+}
+
+// ── Resumo custo × desfecho (topo da seção) ─────────────────────────────────
+function CostSummaryStrip({ metaAds, kpis }: { metaAds: MetaAdsForTable; kpis: Kpis }) {
+  const c = metaAds.currency;
+  const items: { label: string; value: string; sub?: string; accent?: boolean }[] = [
+    {
+      label: "Investimento",
+      value: fmtMoney(metaAds.totalSpend, c),
+      sub: "Meta Ads no período",
+      accent: true,
+    },
+    {
+      label: "CPL real",
+      value: fmtCostPer(metaAds.totalSpend, kpis.total, c),
+      sub: `${kpis.total.toLocaleString("pt-BR")} leads na base`,
+    },
+    {
+      label: "Custo por MQL",
+      value: fmtCostPer(metaAds.totalSpend, kpis.mqlSim, c),
+      sub: `${kpis.mqlSim.toLocaleString("pt-BR")} qualificados`,
+    },
+    {
+      label: "Custo por convertido",
+      value: fmtCostPer(metaAds.totalSpend, kpis.agendadoPlus, c),
+      sub: `${kpis.agendadoPlus.toLocaleString("pt-BR")} convertidos`,
+    },
+    {
+      label: "CTR médio",
+      value: `${metaAds.avgCtr.toFixed(2).replace(".", ",")}%`,
+      sub: `CPC ${fmtMoney(metaAds.avgCpc, c)}`,
+    },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-px border-b border-[color:var(--border)] bg-[color:var(--border)]/40 sm:grid-cols-3 lg:grid-cols-5">
+      {items.map((it) => (
+        <div key={it.label} className="bg-[color:var(--card)] px-5 py-3.5">
+          <div
+            className={
+              "font-[family-name:var(--font-montserrat)] text-lg font-bold leading-none " +
+              (it.accent ? "text-[color:var(--primary)]" : "text-[color:var(--foreground)]")
+            }
+          >
+            {it.value}
+          </div>
+          <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-wider text-[color:var(--muted-foreground)]">
+            {it.label}
+          </div>
+          {it.sub && (
+            <div className="mt-0.5 text-[10px] text-[color:var(--muted-foreground)]/70">{it.sub}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Células Meta por linha ([spend, ctr, cpc, cpm, metaLeads, metaCpl]) ──────
+function MetaCells({
+  ad,
+  row,
+  currency,
+}: {
+  ad: [number, number, number, number, number, number | null] | undefined;
+  row: AdsPerfRow;
+  currency: string;
+}) {
+  if (!ad) {
+    return (
+      <>
+        {[0, 1, 2, 3, 4].map((i) => (
+          <td key={i} className="px-4 py-3 text-right text-xs text-[color:var(--muted-foreground)]/50">
+            —
+          </td>
+        ))}
+      </>
+    );
+  }
+  const [spend, ctr, cpc, cpm, metaLeads, metaCpl] = ad;
+  const tip = `Meta: ${metaLeads} leads · CPL ${metaCpl != null ? fmtMoney(metaCpl, currency) : "—"} · CPC ${fmtMoney(cpc, currency)} · CPM ${fmtMoney(cpm, currency)}`;
+  return (
+    <>
+      <td className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold tabular-nums text-[color:var(--foreground)]" title={tip}>
+        {fmtMoney(spend, currency)}
+      </td>
+      <td className="px-4 py-3 text-right text-xs tabular-nums text-[color:var(--muted-foreground)]">
+        {ctr.toFixed(2).replace(".", ",")}%
+      </td>
+      <td className="whitespace-nowrap px-4 py-3 text-right text-xs tabular-nums text-[color:var(--foreground)]/90">
+        {fmtCostPer(spend, row.total, currency)}
+      </td>
+      <td className="whitespace-nowrap px-4 py-3 text-right text-xs tabular-nums text-[color:var(--foreground)]/90">
+        {fmtCostPer(spend, row.mqlSim, currency)}
+      </td>
+      <td className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold tabular-nums text-[color:var(--foreground)]">
+        {fmtCostPer(spend, row.agendados, currency)}
+      </td>
+    </>
+  );
+}
+
+function ThPlain({
+  align,
+  title,
+  children,
+}: {
+  align?: "left" | "right";
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <th
+      scope="col"
+      title={title}
+      className={
+        "whitespace-nowrap px-4 py-3 text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--muted-foreground)] " +
+        (align === "right" ? "text-right" : "text-left")
+      }
+    >
+      {children}
+    </th>
   );
 }
 
