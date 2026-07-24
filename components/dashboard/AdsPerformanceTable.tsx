@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AdsPerfRow, Kpis } from "@/lib/leads";
 import type { Delta } from "@/lib/deltas";
 import type { MetaAdsForTable } from "@/lib/meta-ads";
@@ -349,10 +349,36 @@ function AdIdentity({
 }) {
   const [preview, setPreview] = useState<{ x: number; y: number } | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const openTimer = useRef<number | null>(null);
   const name = meta?.[4] ?? null;
   const thumb = meta?.[5] ?? null;
   const campaign = meta?.[6] ?? null;
   const format = meta?.[7] ?? "image";
+
+  const cancelOpen = () => {
+    if (openTimer.current !== null) {
+      window.clearTimeout(openTimer.current);
+      openTimer.current = null;
+    }
+  };
+
+  // Popover é position:fixed (escapa do overflow), então coordenadas ficam
+  // OBSOLETAS se a página rolar — e scroll de roda não dispara mouseleave,
+  // deixando o preview congelado longe da thumb ("dash desenquadrado").
+  // Qualquer scroll/resize fecha (captura pega o scroll do container também).
+  useEffect(() => {
+    if (!preview) return;
+    const close = () => setPreview(null);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [preview]);
+
+  useEffect(() => cancelOpen, []);
 
   if (!name && !thumb) {
     return <span className="font-mono">{idAnuncio}</span>;
@@ -362,18 +388,31 @@ function AdIdentity({
     <div className="flex items-center gap-2.5">
       {thumb ? (
         <button
+          ref={btnRef}
           type="button"
           title={format === "video" ? "Reproduzir o anúncio" : "Ver o anúncio como publicado"}
           className="relative shrink-0 cursor-pointer rounded-lg outline-none transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-[color:var(--primary)]/50"
           onClick={() => {
+            cancelOpen();
             setPreview(null);
             setModalOpen(true);
           }}
-          onMouseEnter={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            setPreview({ x: r.right + 12, y: r.top - 8 });
+          onMouseEnter={() => {
+            // Delay: hover de passagem (rolando a página) não abre nada.
+            // Rect é lido NA HORA de abrir — imune a layout shift do load.
+            cancelOpen();
+            openTimer.current = window.setTimeout(() => {
+              openTimer.current = null;
+              const el = btnRef.current;
+              if (!el) return;
+              const r = el.getBoundingClientRect();
+              setPreview({ x: r.right + 12, y: r.top - 8 });
+            }, 120);
           }}
-          onMouseLeave={() => setPreview(null)}
+          onMouseLeave={() => {
+            cancelOpen();
+            setPreview(null);
+          }}
         >
           <img
             src={thumb}
