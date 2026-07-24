@@ -27,7 +27,9 @@ export const GRUPO_LABEL: Record<Grupo, string> = {
 export const STATUS_OPTIONS: { grupo: Grupo; label: string; value: string }[] = [
   { grupo: "Novo", label: "Novo Lead", value: "Novo Lead" },
   { grupo: "Em conversa", label: "Está no script", value: "Está no script" },
-  { grupo: "Agendado+", label: "Agendado", value: "Agendado" },
+  // Label "Convertido" a pedido do Murillo (UI não mostra "Agendado"); value
+  // segue "Agendado" — é o que grava no banco e o que classify() reconhece.
+  { grupo: "Agendado+", label: "Convertido", value: "Agendado" },
   { grupo: "Agendado+", label: "Especialista", value: "Especialista" },
   { grupo: "Agendado+", label: "Negociação", value: "Negociacao" },
   { grupo: "Agendado+", label: "Financeiro", value: "Financeiro" },

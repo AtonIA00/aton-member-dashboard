@@ -178,10 +178,10 @@ export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive, hmac }
                 {metaAds ? "Anúncio" : "ID Anúncio"}
               </Th>
               <Th col="agendados" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
-                Agendados
+                Convertidos
               </Th>
               <Th col="pctAgend" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
-                % Agendamento
+                % Conversão
               </Th>
               <Th col="pctMql" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
                 % MQL
