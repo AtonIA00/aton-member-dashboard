@@ -34,10 +34,6 @@ export type MetaAdInsight = {
   /** Custo por clique NO LINK (cost_per_inline_link_click). */
   cpc: number;
   cpm: number;
-  /** Leads segundo o Meta (action_type lead/lead_grouped/leadgen_grouped). */
-  metaLeads: number;
-  /** CPL segundo o Meta (cost_per_action_type do lead). */
-  metaCpl: number | null;
   /** Thumbnail do criativo (CDN da Meta, URL assinada — expira; cache 15min mantém fresca). */
   thumbnailUrl: string | null;
   /** Formato do criativo — decide o badge (▶ vídeo / ⧉ carrossel) na tabela. */
@@ -50,16 +46,14 @@ export type MetaAdsData = {
   actId: string;
   accountName: string | null;
   currency: string; // ex.: BRL
-  /** Insights por ad_id (chave = ad_id). */
+  /** Insights só dos ads RELEVANTES (os que têm leads na base). */
   byAdId: Map<string, MetaAdInsight>;
-  /** Total investido na conta no período (todos os ads, casando ou não). */
+  /** Total investido na CONTA no período (level=account — todos os ads). */
   totalSpend: number;
   /** Métricas agregadas da conta no período. */
   totalImpressions: number;
   /** Cliques NO LINK somados (base do CTR/CPC médio de link). */
   totalLinkClicks: number;
-  /** Leads totais segundo o Meta. */
-  totalMetaLeads: number;
 };
 
 // ── Mapeamento workspace → conta (cache 10min) ─────────────────────────────
@@ -87,34 +81,60 @@ async function getAccountForWorkspace(workspaceId: string): Promise<AccountRow |
   return data ?? null;
 }
 
-// ── Insights (cache 15min por act+range) ───────────────────────────────────
+// ── Insights (cache 15min por act+range+ids; negativo 2min) ────────────────
 const insightsCache = new Map<string, { ts: number; data: MetaAdsData }>();
 const INSIGHTS_TTL = 15 * 60_000;
+// Falha/deadline → não martelar o Meta a cada pageview: 2min sem retry.
+const negativeCache = new Map<string, number>();
+const NEGATIVE_TTL = 2 * 60_000;
 const TIMEOUT_MS = 12_000;
-
-// action_types que contam como lead (ordem de preferência).
-const LEAD_ACTIONS = ["onsite_conversion.lead_grouped", "leadgen_grouped", "lead"];
+// Orçamento TOTAL da camada Meta por render: estourou → página sai sem a
+// camada de custo (nunca pendurar o dash por causa do Meta).
+const DEADLINE_MS = 10_000;
 
 function num(v: unknown): number {
   const x = typeof v === "string" ? Number(v) : (v as number);
   return Number.isFinite(x) ? x : 0;
 }
 
-function pickLead(list: Array<{ action_type?: string; value?: string }> | undefined): number | null {
-  if (!Array.isArray(list)) return null;
-  for (const t of LEAD_ACTIONS) {
-    const hit = list.find((a) => a.action_type === t);
-    if (hit) return num(hit.value);
+async function fetchJson(url: string): Promise<Record<string, unknown> | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { cache: "no-store", signal: controller.signal });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      // code 190 no detail = token invalidado (regerar no Business Settings).
+      console.error("[meta-ads] !ok", { status: res.status, detail: detail.slice(0, 180) });
+      return null;
+    }
+    return (await res.json()) as Record<string, unknown>;
+  } catch (e) {
+    console.error("[meta-ads] fetch falhou", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
-  return null;
 }
 
 /**
  * Thumbnails + formato dos criativos em batch (`?ids=` aceita até 50 por
- * chamada). Cosmético: qualquer falha degrada pra tabela sem imagem — nunca
- * derruba os dados de custo. Os ids vêm dos insights da conta, então existem.
+ * chamada; chunks em PARALELO). Cosmético: falha degrada pra tabela sem
+ * imagem — nunca derruba os dados de custo.
  */
 type CreativeMeta = { thumb: string | null; format: CreativeFormat };
+type CreativeNode = {
+  creative?: {
+    thumbnail_url?: string;
+    video_id?: string;
+    object_story_spec?: {
+      video_data?: { video_id?: string };
+      link_data?: { child_attachments?: unknown[] };
+    };
+  };
+};
 
 async function fetchCreativeThumbs(
   adIds: string[],
@@ -124,55 +144,47 @@ async function fetchCreativeThumbs(
   const fields =
     "creative.thumbnail_width(256).thumbnail_height(256)" +
     "{thumbnail_url,video_id,object_story_spec{video_data{video_id},link_data{child_attachments{link}}}}";
-  for (let i = 0; i < adIds.length; i += 50) {
-    const chunk = adIds.slice(i, i + 50);
-    const url =
-      `https://graph.facebook.com/v21.0/?ids=${chunk.join(",")}` +
-      `&fields=${fields}&access_token=${encodeURIComponent(token)}`;
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-      const res = await fetch(url, { cache: "no-store", signal: controller.signal });
-      clearTimeout(timer);
-      if (!res.ok) continue;
-      const json = (await res.json()) as Record<
-        string,
-        {
-          creative?: {
-            thumbnail_url?: string;
-            video_id?: string;
-            object_story_spec?: {
-              video_data?: { video_id?: string };
-              link_data?: { child_attachments?: unknown[] };
-            };
-          };
-        }
-      >;
-      for (const [id, v] of Object.entries(json)) {
-        const c = v?.creative;
-        if (!c) continue;
-        const isVideo = Boolean(c.video_id || c.object_story_spec?.video_data?.video_id);
-        const isCarousel = (c.object_story_spec?.link_data?.child_attachments?.length ?? 0) >= 2;
-        out.set(id, {
-          thumb: c.thumbnail_url ?? null,
-          format: isVideo ? "video" : isCarousel ? "carousel" : "image",
-        });
-      }
-    } catch {
-      // segue sem thumbs deste chunk
+  const chunks: string[][] = [];
+  for (let i = 0; i < adIds.length; i += 50) chunks.push(adIds.slice(i, i + 50));
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      fetchJson(
+        `https://graph.facebook.com/v21.0/?ids=${chunk.join(",")}` +
+          `&fields=${fields}&access_token=${encodeURIComponent(token)}`,
+      ),
+    ),
+  );
+  for (const json of results) {
+    if (!json || json.error) continue;
+    for (const [id, v] of Object.entries(json as Record<string, CreativeNode>)) {
+      const c = v?.creative;
+      if (!c) continue;
+      const isVideo = Boolean(c.video_id || c.object_story_spec?.video_data?.video_id);
+      const isCarousel = (c.object_story_spec?.link_data?.child_attachments?.length ?? 0) >= 2;
+      out.set(id, {
+        thumb: c.thumbnail_url ?? null,
+        format: isVideo ? "video" : isCarousel ? "carousel" : "image",
+      });
     }
   }
   return out;
 }
 
 /**
- * Puxa insights por anúncio da conta do workspace no range do dash.
- * null = sem conta vinculada / flag off / erro (degrada silencioso — o dash
- * renderiza sem a camada de custo).
+ * Camada Meta do dash em 3 chamadas PARALELAS (era 1 varredura paginada da
+ * conta inteira — a Brows tem 487 ads históricos e levava 17-33s; assim leva
+ * <1s):
+ *   a) level=account → totais do strip (spend/impressions/linkClicks);
+ *   b) level=ad + filtering ad.id IN(relevantes) → só os ads que têm leads
+ *      na base (a tabela não usa outros);
+ *   c) thumbs/formato só dos relevantes.
+ * null = flag off / sem conta / erro / deadline (degrada silencioso — o dash
+ * renderiza sem a camada de custo; NUNCA pendura a página).
  */
 export async function getMetaAdsForWorkspace(
   workspaceId: string,
   range: DateRange,
+  relevantAdIds: string[],
 ): Promise<MetaAdsData | null> {
   if (!isMetaAdsEnabled()) return null;
   const token = process.env.META_SYSTEM_USER_TOKEN;
@@ -181,11 +193,14 @@ export async function getMetaAdsForWorkspace(
   const account = await getAccountForWorkspace(workspaceId);
   if (!account) return null;
 
+  const ids = [...new Set(relevantAdIds.map((s) => s.trim()).filter((s) => /^\d{5,25}$/.test(s)))];
   const rangeKey = `${range.from ?? "max"}|${range.to ?? "max"}`;
-  const cacheKey = `${account.act_id}|${rangeKey}`;
+  const cacheKey = `${account.act_id}|${rangeKey}|${ids.slice().sort().join(",")}`;
   const now = Date.now();
   const hit = insightsCache.get(cacheKey);
   if (hit && now - hit.ts < INSIGHTS_TTL) return hit.data;
+  const neg = negativeCache.get(cacheKey);
+  if (neg && now - neg < NEGATIVE_TTL) return null;
 
   // Range do dash → parâmetro do Meta. "Todo período" → date_preset=maximum.
   const rangeParam =
@@ -193,44 +208,50 @@ export async function getMetaAdsForWorkspace(
       ? `time_range=${encodeURIComponent(JSON.stringify({ since: range.from, until: range.to }))}`
       : "date_preset=maximum";
 
-  const fields =
-    "ad_id,ad_name,campaign_name,spend,impressions,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,cpm,actions,cost_per_action_type,account_currency";
-  let url: string | null =
-    `https://graph.facebook.com/v21.0/${account.act_id}/insights?level=ad&${rangeParam}&fields=${fields}&limit=200&access_token=${encodeURIComponent(token)}`;
+  const G = "https://graph.facebook.com/v21.0";
+  const tokenParam = `access_token=${encodeURIComponent(token)}`;
 
-  const byAdId = new Map<string, MetaAdInsight>();
-  let currency = "BRL";
-  let totalSpend = 0;
-  let totalImpressions = 0;
-  let totalLinkClicks = 0;
-  let totalMetaLeads = 0;
+  const work = (async (): Promise<MetaAdsData | null> => {
+    // (a) totais da conta — strip custo × desfecho.
+    const accountP = fetchJson(
+      `${G}/${account.act_id}/insights?level=account&${rangeParam}` +
+        `&fields=spend,impressions,inline_link_clicks,account_currency&${tokenParam}`,
+    );
 
-  try {
-    // Paginação: segue paging.next (máx 10 páginas — backstop).
-    for (let page = 0; url && page < 10; page++) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-      const res: Response = await fetch(url, { cache: "no-store", signal: controller.signal });
-      clearTimeout(timer);
-      if (!res.ok) {
-        const detail = await res.text().catch(() => "");
-        console.error("[meta-ads] insights !ok", {
-          actId: account.act_id,
-          status: res.status,
-          detail: detail.slice(0, 200), // code 190 = token invalidado (regerar no BM)
-        });
-        return null;
-      }
-      const json = (await res.json()) as {
-        data?: Array<Record<string, unknown>>;
-        paging?: { next?: string };
-      };
-      for (const r of json.data ?? []) {
+    // (b) insights só dos ads relevantes (chunks de 80 no IN, em paralelo).
+    const adChunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += 80) adChunks.push(ids.slice(i, i + 80));
+    const adFields =
+      "ad_id,ad_name,campaign_name,spend,impressions,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,cpm,account_currency";
+    const adsP = Promise.all(
+      adChunks.map((chunk) => {
+        const filt = encodeURIComponent(
+          JSON.stringify([{ field: "ad.id", operator: "IN", value: chunk }]),
+        );
+        return fetchJson(
+          `${G}/${account.act_id}/insights?level=ad&${rangeParam}&filtering=${filt}` +
+            `&fields=${adFields}&limit=200&${tokenParam}`,
+        );
+      }),
+    );
+
+    // (c) identidade visual dos relevantes.
+    const thumbsP = ids.length > 0 ? fetchCreativeThumbs(ids, token) : Promise.resolve(new Map<string, CreativeMeta>());
+
+    const [accountJson, adsJsons, thumbs] = await Promise.all([accountP, adsP, thumbsP]);
+    if (!accountJson) return null;
+
+    const acc = (accountJson.data as Array<Record<string, unknown>> | undefined)?.[0] ?? {};
+    let currency = (acc.account_currency as string) || "BRL";
+
+    const byAdId = new Map<string, MetaAdInsight>();
+    for (const json of adsJsons) {
+      if (!json) continue;
+      for (const r of (json.data as Array<Record<string, unknown>> | undefined) ?? []) {
         const adId = String(r.ad_id ?? "").trim();
         if (!adId) continue;
-        const actions = r.actions as Array<{ action_type?: string; value?: string }> | undefined;
-        const cpa = r.cost_per_action_type as Array<{ action_type?: string; value?: string }> | undefined;
-        const insight: MetaAdInsight = {
+        const meta = thumbs.get(adId);
+        byAdId.set(adId, {
           adId,
           adName: (r.ad_name as string) ?? null,
           campaignName: (r.campaign_name as string) ?? null,
@@ -240,49 +261,33 @@ export async function getMetaAdsForWorkspace(
           ctr: num(r.inline_link_click_ctr),
           cpc: num(r.cost_per_inline_link_click),
           cpm: num(r.cpm),
-          metaLeads: pickLead(actions) ?? 0,
-          metaCpl: pickLead(cpa),
-          thumbnailUrl: null,
-          format: "image",
-        };
-        byAdId.set(adId, insight);
+          thumbnailUrl: meta?.thumb ?? null,
+          format: meta?.format ?? "image",
+        });
         currency = (r.account_currency as string) || currency;
-        totalSpend += insight.spend;
-        totalImpressions += insight.impressions;
-        totalLinkClicks += insight.linkClicks;
-        totalMetaLeads += insight.metaLeads;
       }
-      url = json.paging?.next ?? null;
     }
-  } catch (e) {
-    console.error("[meta-ads] fetch falhou", {
+
+    return {
       actId: account.act_id,
-      error: e instanceof Error ? e.message : String(e),
-    });
+      accountName: account.account_name,
+      currency,
+      byAdId,
+      totalSpend: num(acc.spend),
+      totalImpressions: num(acc.impressions),
+      totalLinkClicks: num(acc.inline_link_clicks),
+    };
+  })();
+
+  const deadline = new Promise<null>((resolve) => setTimeout(() => resolve(null), DEADLINE_MS));
+  const data = await Promise.race([work, deadline]);
+
+  if (!data) {
+    console.error("[meta-ads] sem dados (erro ou deadline)", { actId: account.act_id, rangeKey });
+    negativeCache.set(cacheKey, now);
     return null;
   }
-
-  if (byAdId.size > 0) {
-    const thumbs = await fetchCreativeThumbs([...byAdId.keys()], token);
-    for (const [id, meta] of thumbs) {
-      const insight = byAdId.get(id);
-      if (insight) {
-        insight.thumbnailUrl = meta.thumb;
-        insight.format = meta.format;
-      }
-    }
-  }
-
-  const data: MetaAdsData = {
-    actId: account.act_id,
-    accountName: account.account_name,
-    currency,
-    byAdId,
-    totalSpend,
-    totalImpressions,
-    totalLinkClicks,
-    totalMetaLeads,
-  };
+  negativeCache.delete(cacheKey);
   insightsCache.set(cacheKey, { ts: now, data });
   return data;
 }

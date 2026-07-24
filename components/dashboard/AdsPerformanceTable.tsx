@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { AdsPerfRow, Kpis } from "@/lib/leads";
 import type { Delta } from "@/lib/deltas";
 import type { MetaAdsForTable } from "@/lib/meta-ads";
@@ -329,7 +330,7 @@ function CostSummaryStrip({ metaAds, kpis }: { metaAds: MetaAdsForTable; kpis: K
   );
 }
 
-// ── Células Meta por linha ([spend, ctr, cpc, cpm, metaLeads, metaCpl]) ──────
+// ── Células Meta por linha (tuple: ver MetaAdsForTable["ads"]) ──────────────
 type AdTuple = MetaAdsForTable["ads"][string];
 
 // ── Identidade do anúncio: thumb do criativo + nome + ID ────────────────────
@@ -461,26 +462,34 @@ function AdIdentity({
           {idAnuncio}
         </div>
       </div>
-      {preview && thumb && (
-        <div
-          className="pointer-events-none fixed z-50 w-60 overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] shadow-2xl"
-          style={{
-            left: Math.min(preview.x, window.innerWidth - 260),
-            top: Math.max(8, Math.min(preview.y, window.innerHeight - 316)),
-          }}
-        >
-          <img src={thumb} alt="" referrerPolicy="no-referrer" className="h-60 w-60 object-cover" />
-          <div className="px-2.5 py-2">
-            <div className="truncate text-[11px] font-bold text-[color:var(--foreground)]">{name}</div>
-            {campaign && (
-              <div className="truncate text-[10px] text-[color:var(--muted-foreground)]">{campaign}</div>
-            )}
-            <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-[color:var(--primary)]">
-              {format === "video" ? "▶ clique para reproduzir" : "clique para ver o anúncio"}
+      {/* PORTAL pro <body>: o card da tabela tem backdrop-blur, e backdrop-
+          filter torna o ancestral o containing block de position:fixed — o
+          popover/modal ficavam relativos ao CARD, não à tela (desalinhava
+          conforme scroll/tamanho de janela; pior em monitor com outra
+          escala). No body não há filtro/transform → fixed = viewport real. */}
+      {preview &&
+        thumb &&
+        createPortal(
+          <div
+            className="pointer-events-none fixed z-50 w-60 overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] shadow-2xl"
+            style={{
+              left: Math.min(preview.x, window.innerWidth - 260),
+              top: Math.max(8, Math.min(preview.y, window.innerHeight - 316)),
+            }}
+          >
+            <img src={thumb} alt="" referrerPolicy="no-referrer" className="h-60 w-60 object-cover" />
+            <div className="px-2.5 py-2">
+              <div className="truncate text-[11px] font-bold text-[color:var(--foreground)]">{name}</div>
+              {campaign && (
+                <div className="truncate text-[10px] text-[color:var(--muted-foreground)]">{campaign}</div>
+              )}
+              <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-[color:var(--primary)]">
+                {format === "video" ? "▶ clique para reproduzir" : "clique para ver o anúncio"}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
       {modalOpen && (
         <AdPreviewModal
           adId={idAnuncio}
@@ -557,7 +566,9 @@ function AdPreviewModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
+  // Portal pro <body>: mesmo motivo do popover — o card ancestral tem
+  // backdrop-blur, que sequestraria o inset-0 (cobriria só o card).
+  return createPortal(
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onClick={onClose}
@@ -628,7 +639,8 @@ function AdPreviewModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

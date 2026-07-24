@@ -111,12 +111,22 @@ export async function Dashboard({
         throw wrapped;
       });
 
-  // Meta Ads (custo × desfecho) — em PARALELO com o agregado de leads.
-  // null quando flag off / workspace sem conta vinculada / erro (degrada
-  // silencioso: o dash renderiza sem a camada de custo).
+  // Meta Ads (custo × desfecho) — encadeado no agregado de leads porque o
+  // fetch é FILTRADO pelos id_anuncio que têm leads na base (3 chamadas
+  // pequenas em paralelo em vez de varrer a conta inteira — a Brows tem 487
+  // ads históricos e a varredura levava 17-33s). null quando flag off /
+  // sem conta vinculada / erro / deadline (degrada silencioso: o dash
+  // renderiza sem a camada de custo).
   const metaAdsPromise = isTonTab
     ? Promise.resolve(null)
-    : getMetaAdsForWorkspace(workspaceId, resolvePeriod(periodKey, customFrom, customTo))
+    : dashboardDataPromise! // non-null: só é null quando isTonTab
+        .then((d) =>
+          getMetaAdsForWorkspace(
+            workspaceId,
+            resolvePeriod(periodKey, customFrom, customTo),
+            [...new Set(d.adsPerformance.filter((r) => !r.isUnknownId).map((r) => r.idAnuncio))],
+          ),
+        )
         .then((d) => (d ? toTablePayload(d) : null))
         .catch((e) => {
           console.error("[dashboard] meta-ads falhou (seguindo sem custo)", {
