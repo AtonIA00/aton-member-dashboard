@@ -193,7 +193,9 @@ export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive, hmac }
                   <Th col="spend" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
                     Invest.
                   </Th>
-                  <ThPlain align="right">CTR</ThPlain>
+                  <ThPlain align="right" title="CTR do link: cliques no link ÷ impressões (não conta reações/comentários)">
+                    CTR link
+                  </ThPlain>
                   <ThPlain align="right" title="Investimento ÷ leads desta base">
                     CPL
                   </ThPlain>
@@ -262,7 +264,8 @@ export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive, hmac }
 
       {metaAds && (
         <div className="border-t border-[color:var(--border)] px-6 py-2 text-[10px] leading-relaxed text-[color:var(--muted-foreground)]/70">
-          Investimento, CTR e CPC via <strong className="font-semibold">Meta Ads</strong> (conta vinculada, mesmo período do filtro).
+          Investimento, CTR de link e CPC via <strong className="font-semibold">Meta Ads</strong> (conta vinculada, mesmo período do filtro).
+          CTR link = cliques no link ÷ impressões (exclui reações/comentários/perfil).
           Contagem de leads: <strong className="font-semibold">sempre a desta base Aton</strong> (fonte da verdade) — CPL, R$/MQL e R$/Conv. são investimento ÷ leads reais.
           Anúncios sem investimento no período aparecem com “—”.
         </div>
@@ -297,9 +300,9 @@ function CostSummaryStrip({ metaAds, kpis }: { metaAds: MetaAdsForTable; kpis: K
       sub: `${kpis.agendadoPlus.toLocaleString("pt-BR")} convertidos`,
     },
     {
-      label: "CTR médio",
+      label: "CTR médio (link)",
       value: `${metaAds.avgCtr.toFixed(2).replace(".", ",")}%`,
-      sub: `CPC ${fmtMoney(metaAds.avgCpc, c)}`,
+      sub: `CPC link ${fmtMoney(metaAds.avgCpc, c)}`,
     },
   ];
   return (
@@ -613,7 +616,7 @@ function MetaCells({
   const [spend, ctr, cpc, cpm] = ad;
   // Só métricas de MÍDIA no tooltip — contagem de leads é SEMPRE a da base
   // Aton (decisão: leads do Meta são frequentemente errôneos, não exibir).
-  const tip = `Meta: CPC ${fmtMoney(cpc, currency)} · CPM ${fmtMoney(cpm, currency)}`;
+  const tip = `Meta: CPC link ${fmtMoney(cpc, currency)} · CPM ${fmtMoney(cpm, currency)}`;
   return (
     <>
       <td className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold tabular-nums text-[color:var(--foreground)]" title={tip}>

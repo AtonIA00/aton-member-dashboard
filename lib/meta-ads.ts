@@ -26,8 +26,12 @@ export type MetaAdInsight = {
   campaignName: string | null;
   spend: number;
   impressions: number;
-  clicks: number;
-  ctr: number; // % (0..100, como o Meta manda)
+  /** Cliques NO LINK (inline_link_clicks) — base do CTR/CPC de link. */
+  linkClicks: number;
+  /** CTR do LINK (inline_link_click_ctr), % — cliques no link ÷ impressões.
+   *  NÃO o "CTR (todos)", que inclui reações/comentários/perfil. */
+  ctr: number;
+  /** Custo por clique NO LINK (cost_per_inline_link_click). */
   cpc: number;
   cpm: number;
   /** Leads segundo o Meta (action_type lead/lead_grouped/leadgen_grouped). */
@@ -52,7 +56,8 @@ export type MetaAdsData = {
   totalSpend: number;
   /** Métricas agregadas da conta no período. */
   totalImpressions: number;
-  totalClicks: number;
+  /** Cliques NO LINK somados (base do CTR/CPC médio de link). */
+  totalLinkClicks: number;
   /** Leads totais segundo o Meta. */
   totalMetaLeads: number;
 };
@@ -189,7 +194,7 @@ export async function getMetaAdsForWorkspace(
       : "date_preset=maximum";
 
   const fields =
-    "ad_id,ad_name,campaign_name,spend,impressions,clicks,ctr,cpc,cpm,actions,cost_per_action_type,account_currency";
+    "ad_id,ad_name,campaign_name,spend,impressions,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,cpm,actions,cost_per_action_type,account_currency";
   let url: string | null =
     `https://graph.facebook.com/v21.0/${account.act_id}/insights?level=ad&${rangeParam}&fields=${fields}&limit=200&access_token=${encodeURIComponent(token)}`;
 
@@ -197,7 +202,7 @@ export async function getMetaAdsForWorkspace(
   let currency = "BRL";
   let totalSpend = 0;
   let totalImpressions = 0;
-  let totalClicks = 0;
+  let totalLinkClicks = 0;
   let totalMetaLeads = 0;
 
   try {
@@ -231,9 +236,9 @@ export async function getMetaAdsForWorkspace(
           campaignName: (r.campaign_name as string) ?? null,
           spend: num(r.spend),
           impressions: num(r.impressions),
-          clicks: num(r.clicks),
-          ctr: num(r.ctr),
-          cpc: num(r.cpc),
+          linkClicks: num(r.inline_link_clicks),
+          ctr: num(r.inline_link_click_ctr),
+          cpc: num(r.cost_per_inline_link_click),
           cpm: num(r.cpm),
           metaLeads: pickLead(actions) ?? 0,
           metaCpl: pickLead(cpa),
@@ -244,7 +249,7 @@ export async function getMetaAdsForWorkspace(
         currency = (r.account_currency as string) || currency;
         totalSpend += insight.spend;
         totalImpressions += insight.impressions;
-        totalClicks += insight.clicks;
+        totalLinkClicks += insight.linkClicks;
         totalMetaLeads += insight.metaLeads;
       }
       url = json.paging?.next ?? null;
@@ -275,7 +280,7 @@ export async function getMetaAdsForWorkspace(
     byAdId,
     totalSpend,
     totalImpressions,
-    totalClicks,
+    totalLinkClicks,
     totalMetaLeads,
   };
   insightsCache.set(cacheKey, { ts: now, data });
@@ -289,8 +294,8 @@ export async function getMetaAdsForWorkspace(
 export type MetaAdsForTable = {
   currency: string;
   totalSpend: number;
-  avgCtr: number; // clicks/impressions*100 (ponderado)
-  avgCpc: number; // spend/clicks
+  avgCtr: number; // CTR de LINK ponderado: linkClicks/impressions*100
+  avgCpc: number; // custo por clique no LINK: spend/linkClicks
   /**
    * por ad_id: [spend, ctr, cpc, cpm, adName, thumbnailUrl, campaignName,
    * format] — métricas de mídia + identidade visual (nada de leads do Meta).
@@ -392,8 +397,9 @@ export function toTablePayload(d: MetaAdsData): MetaAdsForTable {
   return {
     currency: d.currency,
     totalSpend: d.totalSpend,
-    avgCtr: d.totalImpressions > 0 ? (d.totalClicks / d.totalImpressions) * 100 : 0,
-    avgCpc: d.totalClicks > 0 ? d.totalSpend / d.totalClicks : 0,
+    // CTR/CPC de LINK ponderados pela conta (cliques no link ÷ impressões).
+    avgCtr: d.totalImpressions > 0 ? (d.totalLinkClicks / d.totalImpressions) * 100 : 0,
+    avgCpc: d.totalLinkClicks > 0 ? d.totalSpend / d.totalLinkClicks : 0,
     ads,
   };
 }
