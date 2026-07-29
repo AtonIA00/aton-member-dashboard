@@ -522,9 +522,14 @@ export type MetaAdsForTable = {
   totalSpend: number;
   avgCtr: number; // CTR de LINK ponderado: linkClicks/impressions*100
   avgCpc: number; // custo por clique no LINK: spend/linkClicks
+  /** CPM ponderado da conta: spend/impressions*1000. */
+  avgCpm: number;
   /**
    * por ad_id: [spend, ctr, cpc, cpm, adName, thumbnailUrl, campaignName,
-   * format] — métricas de mídia + identidade visual (nada de leads do Meta).
+   * format, impressions, linkClicks] — métricas de mídia + identidade visual
+   * (nada de leads do Meta). impressions/linkClicks são as BASES CRUAS de
+   * cpm e ctr: a tabela mostra cada razão com seu denominador/numerador, pra
+   * o número poder ser conferido na tela (0,61% com 100 cliques ≠ com 6).
    */
   ads: Record<
     string,
@@ -537,6 +542,8 @@ export type MetaAdsForTable = {
       string | null,
       string | null,
       CreativeFormat,
+      number,
+      number,
     ]
   >;
 };
@@ -618,6 +625,8 @@ export function toTablePayload(d: MetaAdsData): MetaAdsForTable {
       a.thumbnailUrl,
       a.campaignName,
       a.format,
+      a.impressions,
+      a.linkClicks,
     ];
   }
   return {
@@ -626,6 +635,7 @@ export function toTablePayload(d: MetaAdsData): MetaAdsForTable {
     // CTR/CPC de LINK ponderados pela conta (cliques no link ÷ impressões).
     avgCtr: d.totalImpressions > 0 ? (d.totalLinkClicks / d.totalImpressions) * 100 : 0,
     avgCpc: d.totalLinkClicks > 0 ? d.totalSpend / d.totalLinkClicks : 0,
+    avgCpm: d.totalImpressions > 0 ? (d.totalSpend / d.totalImpressions) * 1000 : 0,
     ads,
   };
 }

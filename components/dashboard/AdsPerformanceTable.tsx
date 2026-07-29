@@ -201,7 +201,10 @@ export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive, hmac }
                   <Th col="spend" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
                     Invest.
                   </Th>
-                  <ThPlain align="right" title="CTR do link: cliques no link ÷ impressões (não conta reações/comentários)">
+                  <ThPlain align="right" title="Custo por mil impressões — o preço de aparecer. Abaixo, as impressões que formam a base do cálculo.">
+                    CPM
+                  </ThPlain>
+                  <ThPlain align="right" title="CTR do link: cliques no link ÷ impressões (não conta reações/comentários). Abaixo, os cliques em absoluto — mostram o tamanho da amostra que o % esconde.">
                     CTR link
                   </ThPlain>
                   <ThPlain align="right" title="Investimento ÷ leads desta base">
@@ -272,8 +275,9 @@ export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive, hmac }
 
       {metaAds && (
         <div className="border-t border-[color:var(--border)] px-6 py-2 text-[10px] leading-relaxed text-[color:var(--muted-foreground)]/70">
-          Investimento, CTR de link e CPC via <strong className="font-semibold">Meta Ads</strong> (conta vinculada, mesmo período do filtro).
-          CTR link = cliques no link ÷ impressões (exclui reações/comentários/perfil).
+          Investimento, CPM, CTR de link e CPC via <strong className="font-semibold">Meta Ads</strong> (conta vinculada, mesmo período do filtro).
+          CTR link = cliques no link ÷ impressões (exclui reações/comentários/perfil); CPM = custo por mil impressões.
+          Leia da esquerda pra direita como funil: quanto custa <em>aparecer</em> (CPM) → quem <em>clica</em> (CTR) → quanto custa o <em>lead</em> (CPL).
           Contagem de leads: <strong className="font-semibold">sempre a desta base Aton</strong> (fonte da verdade) — CPL, R$/MQL e R$/Conv. são investimento ÷ leads reais.
           Anúncios sem investimento no período aparecem com “—”.
         </div>
@@ -310,7 +314,7 @@ function CostSummaryStrip({ metaAds, kpis }: { metaAds: MetaAdsForTable; kpis: K
     {
       label: "CTR médio (link)",
       value: `${metaAds.avgCtr.toFixed(2).replace(".", ",")}%`,
-      sub: `CPC link ${fmtMoney(metaAds.avgCpc, c)}`,
+      sub: `CPM ${fmtMoney(metaAds.avgCpm, c)} · CPC link ${fmtMoney(metaAds.avgCpc, c)}`,
     },
   ];
   return (
@@ -663,7 +667,7 @@ function MetaCells({
   if (!ad) {
     return (
       <>
-        {[0, 1, 2, 3, 4].map((i) => (
+        {[0, 1, 2, 3, 4, 5].map((i) => (
           <td key={i} className="px-4 py-3 text-right text-xs text-[color:var(--muted-foreground)]/50">
             —
           </td>
@@ -671,17 +675,31 @@ function MetaCells({
       </>
     );
   }
-  const [spend, ctr, cpc, cpm] = ad;
+  const [spend, ctr, cpc, cpm, , , , , impressions, linkClicks] = ad;
   // Só métricas de MÍDIA no tooltip — contagem de leads é SEMPRE a da base
   // Aton (decisão: leads do Meta são frequentemente errôneos, não exibir).
   const tip = `Meta: CPC link ${fmtMoney(cpc, currency)} · CPM ${fmtMoney(cpm, currency)}`;
+  const int = (n: number) => n.toLocaleString("pt-BR");
   return (
     <>
       <td className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold tabular-nums text-[color:var(--foreground)]" title={tip}>
         {fmtMoney(spend, currency)}
       </td>
-      <td className="px-4 py-3 text-right text-xs tabular-nums text-[color:var(--muted-foreground)]">
-        {ctr.toFixed(2).replace(".", ",")}%
+      {/* CPM + impressões: custo de ENTREGA e sua base crua. */}
+      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+        <div className="text-xs text-[color:var(--foreground)]/90">{fmtMoney(cpm, currency)}</div>
+        <div className="text-[10px] leading-tight text-[color:var(--muted-foreground)]/60">
+          {int(impressions)} impr.
+        </div>
+      </td>
+      {/* CTR + cliques: quem CLICA e o tamanho da amostra. */}
+      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+        <div className="text-xs text-[color:var(--muted-foreground)]">
+          {ctr.toFixed(2).replace(".", ",")}%
+        </div>
+        <div className="text-[10px] leading-tight text-[color:var(--muted-foreground)]/60">
+          {int(linkClicks)} {linkClicks === 1 ? "clique" : "cliques"}
+        </div>
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-right text-xs tabular-nums text-[color:var(--foreground)]/90">
         {fmtCostPer(spend, row.total, currency)}
