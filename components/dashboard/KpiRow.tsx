@@ -24,6 +24,10 @@ type Card = {
   /** Valor "atual" e "anterior" pra tooltip + sub-linha contextual. */
   valuePrevious?: string;
   sub?: string;
+  /** Aviso de qualidade do dado (ex.: cobertura de classificação de MQL).
+   *  Renderizado em âmbar abaixo do sub — sinaliza "leia com ressalva". */
+  warn?: string;
+  warnTitle?: string;
   accent: "cyan" | "green" | "amber" | "neutral";
   delta?: Delta;
 };
@@ -49,6 +53,16 @@ function deltaTooltip(currentLabel: string, previousLabel: string): string {
 }
 
 export function KpiRow({ kpis, kpisPrevious, deltas }: Props) {
+  // Cobertura da classificação de MQL. A mqlRate divide pelo TOTAL, então
+  // lead sem `mql` preenchido conta como não-MQL → a taxa é um PISO. Avisa
+  // a partir de 20% sem classificação (abaixo disso a distorção é marginal).
+  const semMql = kpis.mqlSemClassificacao;
+  const pctSemMql = kpis.total > 0 ? semMql / kpis.total : 0;
+  const mqlWarn =
+    pctSemMql >= 0.2
+      ? `⚠ ${pct(pctSemMql)} sem classificação — taxa é piso`
+      : undefined;
+
   const cards: Card[] = [
     {
       label: "Total de Leads",
@@ -69,7 +83,11 @@ export function KpiRow({ kpis, kpisPrevious, deltas }: Props) {
       label: "MQL Rate",
       value: pct(kpis.mqlRate),
       valuePrevious: kpisPrevious ? pct(kpisPrevious.mqlRate) : undefined,
-      sub: `${int(kpis.mqlSim)} qualificados`,
+      sub: `${int(kpis.mqlSim)} qualificados de ${int(kpis.total)}`,
+      warn: mqlWarn,
+      warnTitle: mqlWarn
+        ? `${int(semMql)} de ${int(kpis.total)} leads estão sem MQL preenchido (nem "sim" nem "não"). Eles entram no denominador como não-MQL, então a taxa real pode ser maior. Entre os ${int(kpis.total - semMql)} leads classificados, ${pct(kpis.total - semMql > 0 ? kpis.mqlSim / (kpis.total - semMql) : 0)} são MQL.`
+        : undefined,
       accent: "green",
       delta: deltas?.mqlRate,
     },
@@ -122,6 +140,14 @@ export function KpiRow({ kpis, kpisPrevious, deltas }: Props) {
           {c.sub && (
             <div className="mt-1.5 truncate text-[11px] text-[color:var(--muted-foreground)]/80">
               {c.sub}
+            </div>
+          )}
+          {c.warn && (
+            <div
+              title={c.warnTitle}
+              className="mt-1 cursor-help text-[10px] font-semibold leading-tight text-[#d97706] dark:text-[#fbbf24]"
+            >
+              {c.warn}
             </div>
           )}
           {c.delta && c.valuePrevious !== undefined && (

@@ -46,7 +46,14 @@ export type Kpis = {
   interagiram: number;
   pctInteracao: number;
   mqlSim: number;
+  /** mqlSim / total. Denominador é o TOTAL (não só os classificados): leads
+   *  sem `mql` preenchido contam como não-MQL. Logo a taxa é um PISO — pode
+   *  subir se a classificação for completada. Ver mqlSemClassificacao. */
   mqlRate: number;
+  /** Leads com `mql` vazio/null no recorte. ~54% da base (2026-07, crônico:
+   *  47-62%/mês desde jan). Exposto na UI pro leitor saber se a mqlRate é
+   *  confiável (8% sem classificação) ou quase ficção (94% sem). */
+  mqlSemClassificacao: number;
   agendadoPlus: number;
   pctAgendamento: number;
   anunciosAtivos: number;
@@ -366,6 +373,7 @@ export function computeKpis(leads: LeadRow[]): Kpis {
   const total = leads.length;
   let novos = 0;
   let mqlSim = 0;
+  let mqlSemClassificacao = 0;
   let agendadoPlus = 0;
   const anuncios = new Set<string>();
   const campanhas = new Set<string>();
@@ -374,7 +382,9 @@ export function computeKpis(leads: LeadRow[]): Kpis {
     const g = classify(l.etapa_funil);
     if (g === "Novo") novos++;
     if (g === "Agendado+") agendadoPlus++;
-    if ((l.mql ?? "").toLowerCase().trim() === "sim") mqlSim++;
+    const mqlRaw = (l.mql ?? "").trim();
+    if (mqlRaw === "") mqlSemClassificacao++;
+    if (mqlRaw.toLowerCase() === "sim") mqlSim++;
     if (l.id_anuncio && l.id_anuncio.trim()) anuncios.add(l.id_anuncio.trim());
     if (l.nome_campanha && l.nome_campanha.trim()) campanhas.add(l.nome_campanha.trim());
   }
@@ -388,6 +398,7 @@ export function computeKpis(leads: LeadRow[]): Kpis {
     pctInteracao: safeDiv(interagiram, total),
     mqlSim,
     mqlRate: safeDiv(mqlSim, total),
+    mqlSemClassificacao,
     agendadoPlus,
     pctAgendamento: safeDiv(agendadoPlus, total),
     anunciosAtivos: anuncios.size,

@@ -183,7 +183,14 @@ export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive, hmac }
               <Th col="pctAgend" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
                 % Conversão
               </Th>
-              <Th col="pctMql" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
+              <Th
+                col="pctMql"
+                sortCol={sortCol}
+                sortDir={sortDir}
+                onClick={toggle}
+                align="right"
+                title="MQL sim ÷ total de leads do anúncio. Leads sem MQL preenchido contam como não-MQL, então a taxa é um piso."
+              >
                 % MQL
               </Th>
               <Th col="pctInteracao" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
@@ -718,6 +725,7 @@ function Th({
   sortDir,
   onClick,
   align,
+  title,
   children,
 }: {
   col: SortCol;
@@ -725,6 +733,7 @@ function Th({
   sortDir: SortDir;
   onClick: (c: SortCol) => void;
   align?: "left" | "right";
+  title?: string;
   children: React.ReactNode;
 }) {
   const active = col === sortCol;
@@ -732,6 +741,7 @@ function Th({
   return (
     <th
       scope="col"
+      title={title}
       className={
         "px-4 py-3 text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--muted-foreground)] " +
         (align === "right" ? "text-right" : "text-left")
