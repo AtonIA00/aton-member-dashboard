@@ -292,6 +292,227 @@ export async function getMetaAdsForWorkspace(
   return data;
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// Canal interno pro Aton Core (motor de saúde do assinante / relatório gpt).
+//
+// Por que uma função separada de getMetaAdsForWorkspace: aquela FILTRA os ads
+// que têm lead na base (otimização de render do dash). Aqui é o oposto — o
+// Core precisa justamente dos anúncios com gasto e ZERO lead ("R$ 867 dos
+// R$ 1.351 foram pra anúncios sem MQL"), então a varredura é SEM filtro.
+// Custo aceitável: 1-2 chamadas/dia em cron, janela ≤90 dias (a conta grande
+// tinha 487 ads no histórico mas só 41 em 30d).
+//
+// O token da Meta fica SÓ aqui — o Core consome este endpoint e nunca vê o
+// segredo. Somente leitura.
+// ══════════════════════════════════════════════════════════════════════════
+
+export type CoreAdInsight = {
+  /** CRU, exatamente como a Meta devolve — é a chave do cruzamento com
+   *  terrace360_leads_atonhub.id_anuncio no Core. Nunca formatar/truncar. */
+  ad_id: string;
+  ad_name: string | null;
+  campaign_name: string | null;
+  spend: number;
+  impressions: number;
+  /** Cliques TOTAIS (campo `clicks`: inclui reação, comentário, perfil). */
+  clicks: number;
+  /** Cliques NO LINK (`inline_link_clicks`) — base do ctr/cpc abaixo. */
+  link_clicks: number;
+  /** CTR do LINK em % (mesma métrica do dash, pra relatório não contradizer
+   *  a tela). Cliques no link ÷ impressões. */
+  ctr: number;
+  /** Custo por clique NO LINK. */
+  cpc: number;
+  cpm: number;
+  /** Leads/CPL REPORTADOS PELA META — frequentemente errôneos (por isso não
+   *  aparecem no dash). Mantidos só como referência; a contagem de verdade é
+   *  a da base Aton, que o Core já cruza por ad_id. */
+  meta_leads: number;
+  meta_cpl: number | null;
+};
+
+export type CoreMetaInsights = {
+  workspace_id: string;
+  act_id: string;
+  account_name: string | null;
+  moeda: string;
+  periodo: { de: string; ate: string; dias: number };
+  /** Soma dos anúncios do período — fecha a aritmética com `por_anuncio`
+   *  (spend de A + B + ... = total.spend), o que sustenta afirmações do tipo
+   *  "X dos Y reais foram pra anúncios sem MQL". */
+  total: {
+    spend: number;
+    impressions: number;
+    clicks: number;
+    link_clicks: number;
+    ctr: number;
+    cpc: number;
+    meta_leads: number;
+  };
+  por_anuncio: CoreAdInsight[];
+  /** true = veio de cache OU a chamada à Meta falhou e servimos o último
+   *  valor conhecido. NUNCA devolvemos zero silencioso (ver rota: falha sem
+   *  cache = 502, não payload zerado). */
+  stale: boolean;
+  /** ISO de quando os dados foram puxados da Meta (não de agora). */
+  fetched_at: string;
+};
+
+// Cache dedicado (shape/período diferentes do usado no dash). Mantém o último
+// valor conhecido INDEFINIDAMENTE pro fallback de falha — só o `stale` muda.
+const coreCache = new Map<string, { ts: number; data: CoreMetaInsights }>();
+const CORE_TTL = 15 * 60_000;
+const CORE_MAX_PAGES = 20;
+
+const round2c = (n: number) => Math.round(n * 100) / 100;
+
+/** Últimos N dias em UTC, inclusive hoje — idêntico ao resolvePeriod("7d"/
+ *  "14d"/"30d") do dash, pra Core e tela falarem do mesmo intervalo. */
+function lastNDaysRange(days: number): { de: string; ate: string } {
+  const isoDay = (d: Date) =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
+      d.getUTCDate(),
+    ).padStart(2, "0")}`;
+  const now = new Date();
+  const from = new Date(now);
+  from.setUTCDate(from.getUTCDate() - (days - 1));
+  return { de: isoDay(from), ate: isoDay(now) };
+}
+
+export type CoreLookupResult =
+  | { ok: true; data: CoreMetaInsights }
+  | { ok: false; reason: "not_mapped" | "no_token" | "upstream_failed" };
+
+/**
+ * Insights de mídia por anúncio pro Core. Nunca zera silenciosamente:
+ * - conta não cadastrada/desabilitada → not_mapped (rota devolve 404)
+ * - Meta falhou e não há cache        → upstream_failed (rota devolve 502)
+ * - Meta falhou mas há cache          → ok + stale: true (último conhecido)
+ */
+export async function getMetaInsightsForCore(
+  workspaceId: string,
+  days: number,
+): Promise<CoreLookupResult> {
+  const token = process.env.META_SYSTEM_USER_TOKEN;
+  if (!token) return { ok: false, reason: "no_token" };
+
+  const account = await getAccountForWorkspace(workspaceId);
+  if (!account) return { ok: false, reason: "not_mapped" };
+
+  const { de, ate } = lastNDaysRange(days);
+  const cacheKey = `${account.act_id}|${de}|${ate}`;
+  const cached = coreCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && now - cached.ts < CORE_TTL) {
+    return { ok: true, data: { ...cached.data, stale: true } };
+  }
+
+  const fields =
+    "ad_id,ad_name,campaign_name,spend,impressions,clicks,inline_link_clicks," +
+    "inline_link_click_ctr,cost_per_inline_link_click,cpm,actions,cost_per_action_type,account_currency";
+  const timeRange = encodeURIComponent(JSON.stringify({ since: de, until: ate }));
+  let url: string | null =
+    `https://graph.facebook.com/v21.0/${account.act_id}/insights?level=ad` +
+    `&time_range=${timeRange}&fields=${fields}&limit=200` +
+    `&access_token=${encodeURIComponent(token)}`;
+
+  const porAnuncio: CoreAdInsight[] = [];
+  let moeda = "BRL";
+  let failed = false;
+
+  for (let page = 0; url && page < CORE_MAX_PAGES; page++) {
+    const json = await fetchJson(url);
+    if (!json || json.error) {
+      failed = true;
+      break;
+    }
+    for (const r of (json.data as Array<Record<string, unknown>> | undefined) ?? []) {
+      const adId = String(r.ad_id ?? "").trim();
+      if (!adId) continue;
+      const actions = r.actions as Array<{ action_type?: string; value?: string }> | undefined;
+      const cpa = r.cost_per_action_type as
+        | Array<{ action_type?: string; value?: string }>
+        | undefined;
+      moeda = (r.account_currency as string) || moeda;
+      const cplRaw = pickCoreLead(cpa);
+      porAnuncio.push({
+        ad_id: adId,
+        ad_name: (r.ad_name as string) ?? null,
+        campaign_name: (r.campaign_name as string) ?? null,
+        // Crus e exatos (spend/impressions/clicks/link_clicks/meta_leads) —
+        // é com eles que o Core recalcula o que precisa. Só as métricas de
+        // conveniência (ctr/cpc/cpm/cpl) vão arredondadas a 2 casas.
+        spend: num(r.spend),
+        impressions: num(r.impressions),
+        clicks: num(r.clicks),
+        link_clicks: num(r.inline_link_clicks),
+        ctr: round2c(num(r.inline_link_click_ctr)),
+        cpc: round2c(num(r.cost_per_inline_link_click)),
+        cpm: round2c(num(r.cpm)),
+        meta_leads: pickCoreLead(actions) ?? 0,
+        meta_cpl: cplRaw === null ? null : round2c(cplRaw),
+      });
+    }
+    url = (json.paging as { next?: string } | undefined)?.next ?? null;
+  }
+
+  if (failed) {
+    // Serve o último conhecido marcado como stale; sem cache → erro explícito.
+    if (cached) return { ok: true, data: { ...cached.data, stale: true } };
+    return { ok: false, reason: "upstream_failed" };
+  }
+
+  const total = porAnuncio.reduce(
+    (acc, a) => ({
+      spend: acc.spend + a.spend,
+      impressions: acc.impressions + a.impressions,
+      clicks: acc.clicks + a.clicks,
+      link_clicks: acc.link_clicks + a.link_clicks,
+      meta_leads: acc.meta_leads + a.meta_leads,
+    }),
+    { spend: 0, impressions: 0, clicks: 0, link_clicks: 0, meta_leads: 0 },
+  );
+
+  const round2 = round2c;
+  const data: CoreMetaInsights = {
+    workspace_id: workspaceId,
+    act_id: account.act_id,
+    account_name: account.account_name,
+    moeda,
+    periodo: { de, ate, dias: days },
+    total: {
+      spend: round2(total.spend),
+      impressions: total.impressions,
+      clicks: total.clicks,
+      link_clicks: total.link_clicks,
+      ctr: total.impressions > 0 ? round2((total.link_clicks / total.impressions) * 100) : 0,
+      cpc: total.link_clicks > 0 ? round2(total.spend / total.link_clicks) : 0,
+      meta_leads: total.meta_leads,
+    },
+    por_anuncio: porAnuncio.sort((a, b) => b.spend - a.spend),
+    stale: false,
+    fetched_at: new Date().toISOString(),
+  };
+
+  coreCache.set(cacheKey, { ts: now, data });
+  return { ok: true, data };
+}
+
+// action_types que a Meta usa pra lead (ordem de preferência). Só pro campo
+// meta_leads/meta_cpl de referência — não alimenta nada do dash.
+const CORE_LEAD_ACTIONS = ["onsite_conversion.lead_grouped", "leadgen_grouped", "lead"];
+
+function pickCoreLead(
+  list: Array<{ action_type?: string; value?: string }> | undefined,
+): number | null {
+  if (!Array.isArray(list)) return null;
+  for (const t of CORE_LEAD_ACTIONS) {
+    const hit = list.find((a) => a.action_type === t);
+    if (hit) return num(hit.value);
+  }
+  return null;
+}
+
 // ── Shape serializável pro client (Map não atravessa a fronteira RSC) ───────
 // DECISÃO (Murillo): a contagem de leads usada em TODOS os cálculos é a da
 // base Aton (fonte da verdade). Leads/CPL reportados pelo Meta são
