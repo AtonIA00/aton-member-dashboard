@@ -310,6 +310,8 @@ function DashboardContent({
               metaAds={metaAds}
               kpis={data.kpis}
               filtersActive={filtersActive}
+              workspaceName={workspaceName}
+              periodLabel={periodLabel}
               hmac={hmac}
             />
           </div>

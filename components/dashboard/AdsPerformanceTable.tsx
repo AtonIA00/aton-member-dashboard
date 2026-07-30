@@ -22,6 +22,9 @@ type Props = {
   /** Filtros ativos → resumo de custo é ocultado (spend é da conta inteira;
    *  comparar com KPIs filtrados distorceria os R$/lead). */
   filtersActive: boolean;
+  /** Nome do assinante + rótulo do período — cabeçalho dos arquivos exportados. */
+  workspaceName: string;
+  periodLabel: string;
   /** Params assinados do iframe — auth do /api/ads/preview (modal do criativo). */
   hmac: HmacParams;
 };
@@ -84,7 +87,15 @@ const PCT_AGEND_THRESHOLDS: [number, number, number] = [4, 9, 15];
 const PCT_MQL_THRESHOLDS: [number, number, number] = [10, 20, 30];
 const PCT_INTERACAO_THRESHOLDS: [number, number, number] = [50, 65, 75];
 
-export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive, hmac }: Props) {
+export function AdsPerformanceTable({
+  rows,
+  metaAds,
+  kpis,
+  filtersActive,
+  workspaceName,
+  periodLabel,
+  hmac,
+}: Props) {
   const [sortCol, setSortCol] = useState<SortCol>("total");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -158,6 +169,14 @@ export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive, hmac }
             </span>
           )}
         </span>
+        <AdsExportButton
+          rows={rows}
+          metaAds={metaAds}
+          kpis={kpis}
+          workspaceName={workspaceName}
+          periodLabel={periodLabel}
+          filtersActive={filtersActive}
+        />
       </div>
 
       {/* Resumo custo × desfecho (investimento da conta ÷ desfechos da base).
@@ -283,6 +302,180 @@ export function AdsPerformanceTable({ rows, metaAds, kpis, filtersActive, hmac }
         </div>
       )}
     </div>
+  );
+}
+
+// ── Exportação (XLSX / CSV / PDF) ───────────────────────────────────────────
+// Mesmo padrão do botão de Leads detalhados. As libs (exceljs, jspdf) entram
+// por dynamic import no clique — nada disso pesa no bundle inicial.
+function AdsExportButton({
+  rows,
+  metaAds,
+  kpis,
+  workspaceName,
+  periodLabel,
+  filtersActive,
+}: {
+  rows: AdsPerfRow[];
+  metaAds: MetaAdsForTable | null;
+  kpis: Kpis;
+  workspaceName: string;
+  periodLabel: string;
+  filtersActive: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<"xlsx" | "csv" | "pdf" | null>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  async function run(kind: "xlsx" | "csv" | "pdf") {
+    setBusy(kind);
+    try {
+      const mod = await import("@/lib/export-ads");
+      const input = {
+        rows,
+        metaAds,
+        kpis,
+        meta: { workspaceName, periodLabel, filtersActive, exportedAt: new Date() },
+      };
+      if (kind === "xlsx") await mod.exportAdsToXlsx(input);
+      else if (kind === "csv") mod.exportAdsToCsv(input);
+      else await mod.exportAdsToPdf(input);
+      setOpen(false);
+    } catch (e) {
+      console.error(`[export-ads] ${kind} falhou`, e);
+      alert("Não foi possível gerar o arquivo agora. Tente novamente.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div ref={ref} className="relative ml-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={busy !== null}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex items-center gap-1.5 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-[color:var(--foreground)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[color:var(--aton-blue)]/40 hover:text-[color:var(--aton-blue)] hover:shadow-md active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {busy ? (
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[color:var(--muted-foreground)]/30 border-t-[color:var(--aton-blue)]" />
+        ) : (
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+        )}
+        {busy ? "Gerando…" : "Exportar"}
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-20 mt-1.5 w-64 overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--popover)] shadow-xl"
+        >
+          <AdsExportItem
+            tag="PDF"
+            title="Relatório (.pdf)"
+            subtitle="Identidade Aton, pronto pra enviar"
+            onClick={() => run("pdf")}
+            disabled={busy !== null}
+            accent
+          />
+          <div className="h-px bg-[color:var(--border)]" />
+          <AdsExportItem
+            tag="XLS"
+            title="Excel (.xlsx)"
+            subtitle="Números reais, com aba de resumo"
+            onClick={() => run("xlsx")}
+            disabled={busy !== null}
+          />
+          <div className="h-px bg-[color:var(--border)]" />
+          <AdsExportItem
+            tag="CSV"
+            title="CSV (.csv)"
+            subtitle="Dados crus, pra reimportar"
+            onClick={() => run("csv")}
+            disabled={busy !== null}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdsExportItem({
+  tag,
+  title,
+  subtitle,
+  onClick,
+  disabled,
+  accent,
+}: {
+  tag: string;
+  title: string;
+  subtitle: string;
+  onClick: () => void;
+  disabled?: boolean;
+  accent?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-[color:var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <span
+        className={
+          "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-[10px] font-bold " +
+          (accent
+            ? "bg-[color:var(--aton-blue)]/12 text-[color:var(--aton-blue)]"
+            : "bg-[color:var(--muted)] text-[color:var(--muted-foreground)]")
+        }
+        aria-hidden
+      >
+        {tag}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-xs font-semibold text-[color:var(--foreground)]">{title}</span>
+        <span className="block truncate text-[10px] text-[color:var(--muted-foreground)]">
+          {subtitle}
+        </span>
+      </span>
+    </button>
   );
 }
 
