@@ -30,7 +30,6 @@ type Props = {
 
 type Row = MetaAdRow & {
   adId: string;
-  playRate: number;
   retHook: number;
   retBody: number;
   lowVolume: boolean;
@@ -54,7 +53,7 @@ function heat(v: number, [t0, t1, t2]: [number, number, number]): string {
 }
 
 export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
-  const [sortCol, setSortCol] = useState<"plays" | "retHook" | "retBody" | "playRate">("plays");
+  const [sortCol, setSortCol] = useState<"plays" | "retHook" | "retBody" | "leads">("plays");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const rows = useMemo<Row[]>(() => {
@@ -67,7 +66,6 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
       out.push({
         ...r,
         adId,
-        playRate: r.impressions > 0 ? (r.plays / r.impressions) * 100 : 0,
         retHook: (r.views3s / r.plays) * 100,
         retBody: (r.p75 / r.plays) * 100,
         lowVolume: r.plays < VIDEO_MIN_PLAYS,
@@ -91,9 +89,9 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
     }),
     { impressions: 0, plays: 0, views3s: 0, p75: 0 },
   );
-  const aggPlayRate = tot.impressions > 0 ? (tot.plays / tot.impressions) * 100 : 0;
   const aggHook = tot.plays > 0 ? (tot.views3s / tot.plays) * 100 : 0;
   const aggBody = tot.plays > 0 ? (tot.p75 / tot.plays) * 100 : 0;
+  const totLeads = rows.reduce((s, r) => s + r.leads, 0);
 
   const toggle = (c: typeof sortCol) => {
     if (c === sortCol) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -147,14 +145,13 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
         </span>
       </div>
 
-      {/* Funil da conta: onde a audiência cai. */}
+      {/* Funil da conta: base → onde a audiência cai → desfecho real. */}
       <div className="grid grid-cols-2 gap-px border-b border-[color:var(--border)] bg-[color:var(--border)]/40 sm:grid-cols-4">
         <FunnelCard
-          label="Viram o 1º frame"
-          value={pct1(aggPlayRate)}
-          sub={`${int(tot.plays)} reproduções`}
-          meta={VIDEO_KPI.playRate.meta}
-          ok={aggPlayRate >= VIDEO_KPI.playRate.t[2]}
+          label="Reproduções"
+          value={int(tot.plays)}
+          sub="base das taxas"
+          neutral
         />
         <FunnelCard
           label="Passaram do hook (3s)"
@@ -171,9 +168,9 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
           ok={aggBody >= VIDEO_KPI.retBody.t[2]}
         />
         <FunnelCard
-          label="Impressões"
-          value={int(tot.impressions)}
-          sub="base do play rate"
+          label="Leads gerados"
+          value={int(totLeads)}
+          sub="desfecho na base Aton"
           neutral
         />
       </div>
@@ -191,9 +188,6 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
               <Th col="plays" title="Reproduções do vídeo (base das taxas de retenção)">
                 Reprod.
               </Th>
-              <Th col="playRate" title="Reproduções ÷ impressões — quem viu o 1º frame. Meta: acima de 90%.">
-                Play rate
-              </Th>
               <Th
                 col="retHook"
                 title="Reproduções de 3s ÷ reproduções — quem passou do hook (0-5s). Meta: 40-50% no mercado imobiliário (mediana da carteira Aton: 26%)."
@@ -206,7 +200,7 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
               >
                 Ret. body
               </Th>
-              <Th title="Leads desta base atribuídos ao anúncio — o desfecho real da retenção">
+              <Th col="leads" title="Leads desta base atribuídos ao anúncio — o desfecho real da retenção">
                 Leads
               </Th>
             </tr>
@@ -253,16 +247,6 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
                     </div>
                   )}
                 </td>
-                <Rate
-                  v={r.playRate}
-                  t={VIDEO_KPI.playRate.t}
-                  raw={r.lowVolume}
-                  title={
-                    r.playRate > 100
-                      ? `${int(r.plays)} reproduções em ${int(r.impressions)} impressões. Passa de 100% porque a Meta conta replays: a mesma impressão pode gerar mais de uma reprodução em vídeo que roda em loop.`
-                      : `${int(r.plays)} reproduções em ${int(r.impressions)} impressões`
-                  }
-                />
                 <Rate v={r.retHook} t={VIDEO_KPI.retHook.t} raw={r.lowVolume} />
                 <Rate v={r.retBody} t={VIDEO_KPI.retBody.t} raw={r.lowVolume} />
                 <td className="px-4 py-2 text-right text-xs font-semibold tabular-nums text-[color:var(--foreground)]">
@@ -275,13 +259,13 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
       </div>
 
       <div className="border-t border-[color:var(--border)] px-6 py-2 text-[10px] leading-relaxed text-[color:var(--muted-foreground)]/70">
-        Leia como funil: <strong className="font-semibold">1º frame</strong> (play rate) →{" "}
+        Leia como funil: <strong className="font-semibold">reproduções</strong> →{" "}
         <strong className="font-semibold">passou do hook</strong> (3s) →{" "}
-        <strong className="font-semibold">viu a mensagem</strong> (75%) → <strong className="font-semibold">leads</strong>.
-        A queda entre duas etapas diz onde o criativo perde a audiência: hook fraco, corpo longo ou oferta.
+        <strong className="font-semibold">viu a mensagem</strong> (75%) →{" "}
+        <strong className="font-semibold">leads</strong>. A queda entre duas etapas diz onde o
+        criativo perde a audiência: hook fraco, corpo longo ou oferta.
         Cores: 🟢 meta atingida · 🟡 acima da mediana Aton · 🟠 acima do 1º quartil · 🔴 abaixo.
-        Play rate pode passar de 100%: a Meta conta replays, então uma impressão gera mais de uma
-        reprodução em vídeo que roda em loop. Métricas de vídeo via Meta Ads; leads da base Aton.
+        Métricas de vídeo via Meta Ads; leads da base Aton.
       </div>
     </div>
   );

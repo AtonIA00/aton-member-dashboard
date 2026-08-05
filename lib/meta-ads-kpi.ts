@@ -97,10 +97,14 @@ export function adRow(t: MetaAdTuple): MetaAdRow {
  * hook é atingida por só 13% dos anúncios (mediana real 25,9%) — mesmo erro
  * dos thresholds antigos do heatmap, já corrigido.
  */
+// Play rate (reproduções ÷ impressões) foi REMOVIDO do dash a pedido do
+// Murillo (2026-08-05): 93% da carteira passa da meta de 90% (mediana 95,9%),
+// então não separa criativo bom de ruim — o vídeo dá autoplay, a "reprodução"
+// não é escolha de ninguém. Medi se valia como alarme: dos 7 anúncios abaixo
+// de 85%, os piores eram CARROSSEL/formato misto (3,0% e 4,4%), que a seção já
+// exclui pelo filtro de formato. Segue disponível no endpoint do Core como
+// video_play_rate (dado cru, sem custo visual).
 export const VIDEO_KPI = {
-  /** Reproduções ÷ impressões. Quem vê o 1º frame. Meta >90% (93% da carteira
-   *  passa — quando falha é sinal de problema real de formato). */
-  playRate: { t: [85, 90, 94] as [number, number, number], meta: "> 90%" },
   /** ≥3s ÷ reproduções. Quem passa do hook (0-5s). Richard: 40-50% é muito bom
    *  no mercado imobiliário (resposta direta agressiva: >60%). */
   retHook: { t: [18, 26, 40] as [number, number, number], meta: "40-50%" },
