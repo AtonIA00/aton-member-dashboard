@@ -6,6 +6,7 @@ import { isTonEnabledForTier } from "@/lib/ton/auth";
 import { KpiRow } from "./KpiRow";
 import { Funnel } from "./Funnel";
 import { AdsPerformanceTable } from "./AdsPerformanceTable";
+import { VideoRetentionTable } from "./VideoRetentionTable";
 import { LeadsTable } from "./LeadsTable";
 import { PeriodPicker } from "./PeriodPicker";
 import { TierBadge } from "./TierBadge";
@@ -315,6 +316,22 @@ function DashboardContent({
               hmac={hmac}
             />
           </div>
+
+          {/* Retenção de vídeo (metodologia Richard) — só aparece quando há
+              criativo de VÍDEO na conta vinculada. leadsByAdId cruza a
+              retenção com o desfecho real da base. */}
+          {metaAds && (
+            <div className="mt-8">
+              <VideoRetentionTable
+                metaAds={metaAds}
+                leadsByAdId={Object.fromEntries(
+                  data.adsPerformance
+                    .filter((r) => !r.isUnknownId)
+                    .map((r) => [r.idAnuncio, r.total]),
+                )}
+              />
+            </div>
+          )}
 
           <section aria-label="Análise visual" className="mt-10">
             <div className="mb-4 flex items-center gap-2">

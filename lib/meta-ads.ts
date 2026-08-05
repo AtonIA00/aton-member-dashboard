@@ -1,6 +1,20 @@
 import "server-only";
 import { getSupabaseAdmin } from "./supabase/server";
 import type { DateRange } from "./period";
+import type { CreativeFormat, MetaAdTuple, MetaAdsForTable } from "./meta-ads-kpi";
+
+// Tipos/metas client-safe vivem no meta-ads-kpi.ts (este arquivo é
+// server-only: componente cliente não pode importar valor daqui). Re-exporta
+// pra manter os imports existentes funcionando.
+export {
+  adRow,
+  VIDEO_KPI,
+  VIDEO_MIN_PLAYS,
+  type CreativeFormat,
+  type MetaAdTuple,
+  type MetaAdRow,
+  type MetaAdsForTable,
+} from "./meta-ads-kpi";
 
 // Meta Ads Insights (Graph API v21) — SOMENTE LEITURA.
 //
@@ -38,9 +52,18 @@ export type MetaAdInsight = {
   thumbnailUrl: string | null;
   /** Formato do criativo — decide o badge (▶ vídeo / ⧉ carrossel) na tabela. */
   format: CreativeFormat;
+  // ── Vídeo: base crua dos KPIs de retenção (metas em meta-ads-kpi.ts) ─────
+  /** Reproduções do vídeo (video_play_actions) — 1º frame. */
+  plays: number;
+  /** Reproduções de ≥3s. Vem do action_type `video_view` do array `actions`:
+   *  o campo video_3_sec_watched_actions FOI REMOVIDO na v21 (erro 100), e
+   *  video_continuous_2_sec_watched_actions volta ZERADO em parte dos
+   *  anúncios (medido: 1 de 4 na Brows, num anúncio com 242k reproduções).
+   *  `video_view` é o "3 segundos" clássico da Meta e populou 100% da amostra. */
+  views3s: number;
+  /** Reproduções de 75% do vídeo (onde a mensagem de venda termina). */
+  p75: number;
 };
-
-export type CreativeFormat = "video" | "carousel" | "image";
 
 export type MetaAdsData = {
   actId: string;
@@ -95,6 +118,21 @@ const DEADLINE_MS = 10_000;
 function num(v: unknown): number {
   const x = typeof v === "string" ? Number(v) : (v as number);
   return Number.isFinite(x) ? x : 0;
+}
+
+/** Métricas de vídeo vêm como [{action_type, value}] — pega o 1º valor. */
+function actionValue(v: unknown): number {
+  if (Array.isArray(v)) return num((v[0] as { value?: unknown } | undefined)?.value);
+  return num(v);
+}
+
+/** Extrai um action_type específico do array `actions`. */
+function pickActionType(list: unknown, type: string): number {
+  if (!Array.isArray(list)) return 0;
+  const hit = (list as Array<{ action_type?: string; value?: unknown }>).find(
+    (a) => a.action_type === type,
+  );
+  return hit ? num(hit.value) : 0;
 }
 
 async function fetchJson(url: string): Promise<Record<string, unknown> | null> {
@@ -221,8 +259,11 @@ export async function getMetaAdsForWorkspace(
     // (b) insights só dos ads relevantes (chunks de 80 no IN, em paralelo).
     const adChunks: string[][] = [];
     for (let i = 0; i < ids.length; i += 80) adChunks.push(ids.slice(i, i + 80));
+    // `actions` entra só pelo action_type video_view (= 3s) — ver views3s.
     const adFields =
-      "ad_id,ad_name,campaign_name,spend,impressions,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,cpm,account_currency";
+      "ad_id,ad_name,campaign_name,spend,impressions,inline_link_clicks,inline_link_click_ctr," +
+      "cost_per_inline_link_click,cpm,account_currency," +
+      "video_play_actions,video_p75_watched_actions,actions";
     const adsP = Promise.all(
       adChunks.map((chunk) => {
         const filt = encodeURIComponent(
@@ -263,6 +304,9 @@ export async function getMetaAdsForWorkspace(
           cpm: num(r.cpm),
           thumbnailUrl: meta?.thumb ?? null,
           format: meta?.format ?? "image",
+          plays: actionValue(r.video_play_actions),
+          views3s: pickActionType(r.actions, "video_view"),
+          p75: actionValue(r.video_p75_watched_actions),
         });
         currency = (r.account_currency as string) || currency;
       }
@@ -513,41 +557,6 @@ function pickCoreLead(
   return null;
 }
 
-// ── Shape serializável pro client (Map não atravessa a fronteira RSC) ───────
-// DECISÃO (Murillo): a contagem de leads usada em TODOS os cálculos é a da
-// base Aton (fonte da verdade). Leads/CPL reportados pelo Meta são
-// frequentemente errôneos → NÃO são enviados ao client nem exibidos.
-export type MetaAdsForTable = {
-  currency: string;
-  totalSpend: number;
-  avgCtr: number; // CTR de LINK ponderado: linkClicks/impressions*100
-  avgCpc: number; // custo por clique no LINK: spend/linkClicks
-  /** CPM ponderado da conta: spend/impressions*1000. */
-  avgCpm: number;
-  /**
-   * por ad_id: [spend, ctr, cpc, cpm, adName, thumbnailUrl, campaignName,
-   * format, impressions, linkClicks] — métricas de mídia + identidade visual
-   * (nada de leads do Meta). impressions/linkClicks são as BASES CRUAS de
-   * cpm e ctr: a tabela mostra cada razão com seu denominador/numerador, pra
-   * o número poder ser conferido na tela (0,61% com 100 cliques ≠ com 6).
-   */
-  ads: Record<
-    string,
-    [
-      number,
-      number,
-      number,
-      number,
-      string | null,
-      string | null,
-      string | null,
-      CreativeFormat,
-      number,
-      number,
-    ]
-  >;
-};
-
 // ── Preview oficial do anúncio (Ad Preview API) ─────────────────────────────
 // Devolve o src do iframe da Meta que renderiza o anúncio REAL — vídeo
 // tocável, carrossel navegável. Validado: renderiza sem login no Facebook e
@@ -627,6 +636,9 @@ export function toTablePayload(d: MetaAdsData): MetaAdsForTable {
       a.format,
       a.impressions,
       a.linkClicks,
+      a.plays,
+      a.views3s,
+      a.p75,
     ];
   }
   return {
