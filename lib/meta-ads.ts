@@ -373,6 +373,25 @@ export type CoreAdInsight = {
    *  a da base Aton, que o Core já cruza por ad_id. */
   meta_leads: number;
   meta_cpl: number | null;
+  // ── Retenção de vídeo (metodologia Richard) ──────────────────────────────
+  // É vídeo quando video_plays > 0. Nos outros formatos as taxas vêm null (e
+  // não 0, que o Core leria como "retenção zero" num anúncio que nem é vídeo).
+  /** Reproduções do vídeo (1º frame). Base das duas taxas. */
+  video_plays: number;
+  /** Reproduções de ≥3s — quem passou do hook. Vem do action_type
+   *  `video_view`: video_3_sec_watched_actions foi REMOVIDO na v21 e o
+   *  continuous_2_sec volta zerado em parte dos anúncios. */
+  video_views_3s: number;
+  /** Reproduções de 75% — quem consumiu a mensagem de venda. */
+  video_p75: number;
+  /** video_plays ÷ impressions (%). Pode passar de 100%: a Meta conta
+   *  replays. Meta de referência: >90%. */
+  video_play_rate: number | null;
+  /** video_views_3s ÷ video_plays (%). O KPI mais acionável do conjunto.
+   *  Meta Richard: 40-50% (mediana real da carteira Aton: ~26%). */
+  video_ret_hook: number | null;
+  /** video_p75 ÷ video_plays (%). Meta: >2% (p25 real da carteira: 1,9%). */
+  video_ret_body: number | null;
 };
 
 export type CoreMetaInsights = {
@@ -392,6 +411,14 @@ export type CoreMetaInsights = {
     ctr: number;
     cpc: number;
     meta_leads: number;
+    /** Agregados de vídeo: SOMAS das bases, e as taxas calculadas sobre elas
+     *  (não média de taxas — isso daria peso igual a um vídeo de 200 e outro
+     *  de 200 mil reproduções). Só considera os anúncios de formato vídeo. */
+    video_plays: number;
+    video_views_3s: number;
+    video_p75: number;
+    video_ret_hook: number | null;
+    video_ret_body: number | null;
   };
   por_anuncio: CoreAdInsight[];
   /** true = veio de cache OU a chamada à Meta falhou e servimos o último
@@ -453,7 +480,8 @@ export async function getMetaInsightsForCore(
 
   const fields =
     "ad_id,ad_name,campaign_name,spend,impressions,clicks,inline_link_clicks," +
-    "inline_link_click_ctr,cost_per_inline_link_click,cpm,actions,cost_per_action_type,account_currency";
+    "inline_link_click_ctr,cost_per_inline_link_click,cpm,actions,cost_per_action_type," +
+    "account_currency,video_play_actions,video_p75_watched_actions";
   const timeRange = encodeURIComponent(JSON.stringify({ since: de, until: ate }));
   let url: string | null =
     `https://graph.facebook.com/v21.0/${account.act_id}/insights?level=ad` +
@@ -479,6 +507,10 @@ export async function getMetaInsightsForCore(
         | undefined;
       moeda = (r.account_currency as string) || moeda;
       const cplRaw = pickCoreLead(cpa);
+      const impressions = num(r.impressions);
+      const plays = actionValue(r.video_play_actions);
+      const views3s = pickActionType(r.actions, "video_view");
+      const p75 = actionValue(r.video_p75_watched_actions);
       porAnuncio.push({
         ad_id: adId,
         ad_name: (r.ad_name as string) ?? null,
@@ -495,6 +527,15 @@ export async function getMetaInsightsForCore(
         cpm: round2c(num(r.cpm)),
         meta_leads: pickCoreLead(actions) ?? 0,
         meta_cpl: cplRaw === null ? null : round2c(cplRaw),
+        // Vídeo: bases cruas + taxas. Taxa null quando não há reprodução
+        // (imagem/carrossel) — melhor que 0, que o Core leria como "retenção
+        // zero" num anúncio que nem é vídeo.
+        video_plays: plays,
+        video_views_3s: views3s,
+        video_p75: p75,
+        video_play_rate: impressions > 0 && plays > 0 ? round2c((plays / impressions) * 100) : null,
+        video_ret_hook: plays > 0 ? round2c((views3s / plays) * 100) : null,
+        video_ret_body: plays > 0 ? round2c((p75 / plays) * 100) : null,
       });
     }
     url = (json.paging as { next?: string } | undefined)?.next ?? null;
@@ -513,8 +554,20 @@ export async function getMetaInsightsForCore(
       clicks: acc.clicks + a.clicks,
       link_clicks: acc.link_clicks + a.link_clicks,
       meta_leads: acc.meta_leads + a.meta_leads,
+      video_plays: acc.video_plays + a.video_plays,
+      video_views_3s: acc.video_views_3s + a.video_views_3s,
+      video_p75: acc.video_p75 + a.video_p75,
     }),
-    { spend: 0, impressions: 0, clicks: 0, link_clicks: 0, meta_leads: 0 },
+    {
+      spend: 0,
+      impressions: 0,
+      clicks: 0,
+      link_clicks: 0,
+      meta_leads: 0,
+      video_plays: 0,
+      video_views_3s: 0,
+      video_p75: 0,
+    },
   );
 
   const round2 = round2c;
@@ -532,6 +585,13 @@ export async function getMetaInsightsForCore(
       ctr: total.impressions > 0 ? round2((total.link_clicks / total.impressions) * 100) : 0,
       cpc: total.link_clicks > 0 ? round2(total.spend / total.link_clicks) : 0,
       meta_leads: total.meta_leads,
+      video_plays: total.video_plays,
+      video_views_3s: total.video_views_3s,
+      video_p75: total.video_p75,
+      video_ret_hook:
+        total.video_plays > 0 ? round2((total.video_views_3s / total.video_plays) * 100) : null,
+      video_ret_body:
+        total.video_plays > 0 ? round2((total.video_p75 / total.video_plays) * 100) : null,
     },
     por_anuncio: porAnuncio.sort((a, b) => b.spend - a.spend),
     stale: false,

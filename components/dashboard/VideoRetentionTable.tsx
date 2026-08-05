@@ -33,7 +33,6 @@ type Row = MetaAdRow & {
   playRate: number;
   retHook: number;
   retBody: number;
-  retClique: number | null;
   lowVolume: boolean;
   leads: number;
 };
@@ -71,8 +70,6 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
         playRate: r.impressions > 0 ? (r.plays / r.impressions) * 100 : 0,
         retHook: (r.views3s / r.plays) * 100,
         retBody: (r.p75 / r.plays) * 100,
-        // Guard: p75 minúsculo gera taxa absurda (medido até 10.450%).
-        retClique: r.p75 >= 20 ? (r.linkClicks / r.p75) * 100 : null,
         lowVolume: r.plays < VIDEO_MIN_PLAYS,
         leads: leadsByAdId[adId] ?? 0,
       });
@@ -209,9 +206,6 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
               >
                 Ret. body
               </Th>
-              <Th title="Cliques no link ÷ reproduções de 75%. Abaixo de 100% = clicou antes de ver a mensagem inteira. No funil da Aton isso não é problema: a IA qualifica depois, e clique cedo indica interesse. Sem heat de propósito.">
-                Clique/75%
-              </Th>
               <Th title="Leads desta base atribuídos ao anúncio — o desfecho real da retenção">
                 Leads
               </Th>
@@ -271,16 +265,6 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
                 />
                 <Rate v={r.retHook} t={VIDEO_KPI.retHook.t} raw={r.lowVolume} />
                 <Rate v={r.retBody} t={VIDEO_KPI.retBody.t} raw={r.lowVolume} />
-                {/* Sem heat: acima/abaixo de 100% não é bom/ruim no funil da Aton. */}
-                <td className="px-4 py-2 text-right text-xs tabular-nums text-[color:var(--muted-foreground)]">
-                  {r.retClique === null ? (
-                    <span className="text-[color:var(--muted-foreground)]/50" title="Menos de 20 reproduções de 75% — taxa não confiável.">
-                      —
-                    </span>
-                  ) : (
-                    pct1(r.retClique)
-                  )}
-                </td>
                 <td className="px-4 py-2 text-right text-xs font-semibold tabular-nums text-[color:var(--foreground)]">
                   {r.leads > 0 ? int(r.leads) : <span className="text-[color:var(--muted-foreground)]/50">0</span>}
                 </td>
@@ -293,8 +277,8 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
       <div className="border-t border-[color:var(--border)] px-6 py-2 text-[10px] leading-relaxed text-[color:var(--muted-foreground)]/70">
         Leia como funil: <strong className="font-semibold">1º frame</strong> (play rate) →{" "}
         <strong className="font-semibold">passou do hook</strong> (3s) →{" "}
-        <strong className="font-semibold">viu a mensagem</strong> (75%) → clicou. A queda entre duas
-        etapas diz onde o criativo perde a audiência: hook fraco, corpo longo ou oferta.
+        <strong className="font-semibold">viu a mensagem</strong> (75%) → <strong className="font-semibold">leads</strong>.
+        A queda entre duas etapas diz onde o criativo perde a audiência: hook fraco, corpo longo ou oferta.
         Cores: 🟢 meta atingida · 🟡 acima da mediana Aton · 🟠 acima do 1º quartil · 🔴 abaixo.
         Play rate pode passar de 100%: a Meta conta replays, então uma impressão gera mais de uma
         reprodução em vídeo que roda em loop. Métricas de vídeo via Meta Ads; leads da base Aton.

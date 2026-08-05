@@ -12,6 +12,11 @@ export const dynamic = "force-dynamic";
 // token da Meta. Nível de anúncio + total do período, nada de campaign/adset
 // nem breakdowns.
 //
+// Inclui os KPIs de retenção de vídeo (metodologia Richard, 2026-08-05):
+// video_plays / video_views_3s / video_p75 crus + video_play_rate,
+// video_ret_hook e video_ret_body. É vídeo quando video_plays > 0; nos outros
+// formatos as taxas vêm null (não 0).
+//
 // Chamador: container do Core na overlay AtonbotNet, via
 //   GET http://member-dashboard_app:3000/api/internal/meta-insights?workspace_id=..&days=7
 //   Authorization: Bearer <INTERNAL_SHARED_SECRET>
