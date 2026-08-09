@@ -5,8 +5,12 @@ import { useMemo, useState } from "react";
 // componente cliente que importa valor do módulo com o token quebra o build.
 import {
   adRow,
+  bodyThresholds,
+  duracaoStatus,
+  VIDEO_DURACAO,
   VIDEO_KPI,
   VIDEO_MIN_PLAYS,
+  type DuracaoStatus,
   type MetaAdsForTable,
   type MetaAdRow,
 } from "@/lib/meta-ads-kpi";
@@ -32,6 +36,9 @@ type Row = MetaAdRow & {
   adId: string;
   retHook: number;
   retBody: number;
+  /** Régua do body ajustada pela duração deste vídeo. */
+  bodyT: [number, number, number];
+  durStatus: DuracaoStatus | null;
   lowVolume: boolean;
   leads: number;
 };
@@ -68,6 +75,8 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
         adId,
         retHook: (r.views3s / r.plays) * 100,
         retBody: (r.p75 / r.plays) * 100,
+        bodyT: bodyThresholds(r.duracaoSeg),
+        durStatus: duracaoStatus(r.duracaoSeg),
         lowVolume: r.plays < VIDEO_MIN_PLAYS,
         leads: leadsByAdId[adId] ?? 0,
       });
@@ -185,6 +194,9 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
               >
                 Criativo
               </th>
+              <Th title={`Duração do vídeo. Faixa recomendada ${VIDEO_DURACAO.idealMin}-${VIDEO_DURACAO.idealMax}s, derivada do desfecho real da carteira: abaixo de 30s o CPL mediano é R$ 262 e acima de 60s a qualificação despenca. "—" = a Meta bloqueia a duração deste vídeo (página não compartilhada).`}>
+                Duração
+              </Th>
               <Th col="plays" title="Reproduções do vídeo (base das taxas de retenção)">
                 Reprod.
               </Th>
@@ -236,6 +248,9 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
                     </div>
                   </div>
                 </td>
+                <td className="whitespace-nowrap px-4 py-2 text-right">
+                  <DuracaoCell seg={r.duracaoSeg} status={r.durStatus} />
+                </td>
                 <td className="px-4 py-2 text-right text-xs tabular-nums text-[color:var(--foreground)]">
                   {int(r.plays)}
                   {r.lowVolume && (
@@ -248,7 +263,16 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
                   )}
                 </td>
                 <Rate v={r.retHook} t={VIDEO_KPI.retHook.t} raw={r.lowVolume} />
-                <Rate v={r.retBody} t={VIDEO_KPI.retBody.t} raw={r.lowVolume} />
+                <Rate
+                  v={r.retBody}
+                  t={r.bodyT}
+                  raw={r.lowVolume}
+                  title={
+                    r.duracaoSeg != null
+                      ? `Régua ajustada para vídeo de ${Math.round(r.duracaoSeg)}s: verde ≥ ${r.bodyT[2].toFixed(1).replace(".", ",")}%. Chegar a 75% de um vídeo longo é mecanicamente mais difícil.`
+                      : "Duração desconhecida — usando a régua base (35-50s)."
+                  }
+                />
                 <td className="px-4 py-2 text-right text-xs font-semibold tabular-nums text-[color:var(--foreground)]">
                   {r.leads > 0 ? int(r.leads) : <span className="text-[color:var(--muted-foreground)]/50">0</span>}
                 </td>
@@ -264,10 +288,64 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
         <strong className="font-semibold">viu a mensagem</strong> (75%) →{" "}
         <strong className="font-semibold">leads</strong>. A queda entre duas etapas diz onde o
         criativo perde a audiência: hook fraco, corpo longo ou oferta.
-        Cores: 🟢 meta atingida · 🟡 acima da mediana Aton · 🟠 acima do 1º quartil · 🔴 abaixo.
+        Cores: 🟢 quartil superior da carteira Aton · 🟡 acima da mediana · 🟠 acima do 1º quartil · 🔴 abaixo.
+        <br />
+        <strong className="font-semibold">Duração recomendada: {VIDEO_DURACAO.idealMin}–{VIDEO_DURACAO.idealMax}s.</strong>{" "}
+        Medido na carteira (90 dias): abaixo de 30s o CPL mediano é R$ 262 contra R$ 61 na faixa de
+        30–40s; acima de 60s a qualificação cai para 0,018 MQL por mil reproduções (a faixa de
+        40–50s faz 0,086). A régua de <em>ret. body</em> é ajustada pela duração de cada vídeo —
+        alcançar 75% de um vídeo longo é mecanicamente mais difícil.
         Métricas de vídeo via Meta Ads; leads da base Aton.
       </div>
     </div>
+  );
+}
+
+/** Duração + tarja quando fora da faixa recomendada (30-50s). */
+function DuracaoCell({ seg, status }: { seg: number | null; status: DuracaoStatus | null }) {
+  if (seg == null) {
+    return (
+      <span
+        className="text-xs text-[color:var(--muted-foreground)]/50"
+        title="A Meta não libera a duração deste vídeo (a página dona não foi compartilhada com a Aton). A régua do body cai no padrão."
+      >
+        —
+      </span>
+    );
+  }
+  const s = Math.round(seg);
+  const cfg: Record<DuracaoStatus, { cls: string; tag: string | null; tip: string }> = {
+    curto: {
+      cls: "text-[#d97706] dark:text-[#fbbf24]",
+      tag: "curto",
+      tip: `Abaixo de ${VIDEO_DURACAO.idealMin}s. Na carteira Aton essa é a PIOR faixa: CPL mediano de R$ 262 contra R$ 61 na faixa de 30-40s. Vídeo curto demais não dá tempo de construir a oferta.`,
+    },
+    ideal: {
+      cls: "text-[#10b981]",
+      tag: null,
+      tip: `Dentro da faixa recomendada (${VIDEO_DURACAO.idealMin}-${VIDEO_DURACAO.idealMax}s), que concentra 86% dos leads da carteira com 72% da verba.`,
+    },
+    aceitavel: {
+      cls: "text-[color:var(--foreground)]",
+      tag: null,
+      tip: `Acima do ideal (${VIDEO_DURACAO.idealMax}s) mas dentro do limite. Amostra pequena nessa faixa — sem evidência forte contra.`,
+    },
+    longo: {
+      cls: "text-[#d97706] dark:text-[#fbbf24]",
+      tag: "longo",
+      tip: `Acima de ${VIDEO_DURACAO.limiteLongo}s. Na carteira, essa faixa tem a PIOR qualificação: 0,018 MQL por mil reproduções contra 0,086 na faixa de 40-50s.`,
+    },
+  };
+  const c = cfg[status ?? "ideal"];
+  return (
+    <span className="inline-flex items-center gap-1.5" title={c.tip}>
+      <span className={"text-xs font-semibold tabular-nums " + c.cls}>{s}s</span>
+      {c.tag && (
+        <span className="rounded bg-[#d97706]/12 px-1 text-[9px] font-bold uppercase text-[#d97706] dark:text-[#fbbf24]">
+          {c.tag}
+        </span>
+      )}
+    </span>
   );
 }
 

@@ -63,6 +63,10 @@ export type MetaAdInsight = {
   views3s: number;
   /** Reproduções de 75% do vídeo (onde a mensagem de venda termina). */
   p75: number;
+  /** Duração do vídeo em segundos. null quando a Meta bloqueia (erro 10: a
+   *  página dona não foi compartilhada) — ~metade dos casos. Define a régua
+   *  do body, que é mecanicamente dependente da duração. */
+  duracaoSeg: number | null;
 };
 
 export type MetaAdsData = {
@@ -135,7 +139,12 @@ function pickActionType(list: unknown, type: string): number {
   return hit ? num(hit.value) : 0;
 }
 
-async function fetchJson(url: string): Promise<Record<string, unknown> | null> {
+/** quiet: falha ESPERADA (ex.: duração de vídeo bloqueada, erro 10) — não
+ *  loga, senão polui o log de produção a cada refresh de cache. */
+async function fetchJson(
+  url: string,
+  quiet = false,
+): Promise<Record<string, unknown> | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -143,7 +152,9 @@ async function fetchJson(url: string): Promise<Record<string, unknown> | null> {
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
       // code 190 no detail = token invalidado (regerar no Business Settings).
-      console.error("[meta-ads] !ok", { status: res.status, detail: detail.slice(0, 180) });
+      if (!quiet) {
+        console.error("[meta-ads] !ok", { status: res.status, detail: detail.slice(0, 180) });
+      }
       return null;
     }
     return (await res.json()) as Record<string, unknown>;
@@ -162,7 +173,7 @@ async function fetchJson(url: string): Promise<Record<string, unknown> | null> {
  * chamada; chunks em PARALELO). Cosmético: falha degrada pra tabela sem
  * imagem — nunca derruba os dados de custo.
  */
-type CreativeMeta = { thumb: string | null; format: CreativeFormat };
+type CreativeMeta = { thumb: string | null; format: CreativeFormat; duracaoSeg: number | null };
 type CreativeNode = {
   creative?: {
     thumbnail_url?: string;
@@ -171,8 +182,42 @@ type CreativeNode = {
       video_data?: { video_id?: string };
       link_data?: { child_attachments?: unknown[] };
     };
+    asset_feed_spec?: { videos?: Array<{ video_id?: string }> };
   };
 };
+
+/**
+ * Duração dos vídeos. NÃO dá pra pedir em lote grande: o endpoint `?ids=`
+ * derruba o lote INTEIRO se um único id for inacessível — e ~metade dos
+ * vídeos retorna erro 10 (a página dona não foi compartilhada com o System
+ * User). Por isso: chunks de 5, tolerantes, em paralelo. Quem falha fica com
+ * duração null e cai na régua base.
+ */
+async function fetchVideoDurations(
+  videoIds: string[],
+  token: string,
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const chunks: string[][] = [];
+  for (let i = 0; i < videoIds.length; i += 5) chunks.push(videoIds.slice(i, i + 5));
+  const res = await Promise.all(
+    chunks.map((c) =>
+      fetchJson(
+        `https://graph.facebook.com/v21.0/?ids=${c.join(",")}&fields=length` +
+          `&access_token=${encodeURIComponent(token)}`,
+        true, // erro 10 (página não compartilhada) é esperado — não logar
+      ),
+    ),
+  );
+  for (const json of res) {
+    if (!json || json.error) continue;
+    for (const [id, v] of Object.entries(json as Record<string, { length?: number }>)) {
+      const len = Number(v?.length);
+      if (Number.isFinite(len) && len > 0) out.set(id, len);
+    }
+  }
+  return out;
+}
 
 async function fetchCreativeThumbs(
   adIds: string[],
@@ -181,7 +226,8 @@ async function fetchCreativeThumbs(
   const out = new Map<string, CreativeMeta>();
   const fields =
     "creative.thumbnail_width(256).thumbnail_height(256)" +
-    "{thumbnail_url,video_id,object_story_spec{video_data{video_id},link_data{child_attachments{link}}}}";
+    "{thumbnail_url,video_id,object_story_spec{video_data{video_id},link_data{child_attachments{link}}}," +
+    "asset_feed_spec{videos{video_id}}}";
   const chunks: string[][] = [];
   for (let i = 0; i < adIds.length; i += 50) chunks.push(adIds.slice(i, i + 50));
   const results = await Promise.all(
@@ -192,17 +238,34 @@ async function fetchCreativeThumbs(
       ),
     ),
   );
+  // 1ª passada: formato + thumb, guardando o video_id de cada anúncio.
+  const videoDoAd = new Map<string, string>();
   for (const json of results) {
     if (!json || json.error) continue;
     for (const [id, v] of Object.entries(json as Record<string, CreativeNode>)) {
       const c = v?.creative;
       if (!c) continue;
-      const isVideo = Boolean(c.video_id || c.object_story_spec?.video_data?.video_id);
+      const videoId =
+        c.video_id ??
+        c.object_story_spec?.video_data?.video_id ??
+        c.asset_feed_spec?.videos?.[0]?.video_id ??
+        null;
       const isCarousel = (c.object_story_spec?.link_data?.child_attachments?.length ?? 0) >= 2;
+      if (videoId) videoDoAd.set(id, String(videoId));
       out.set(id, {
         thumb: c.thumbnail_url ?? null,
-        format: isVideo ? "video" : isCarousel ? "carousel" : "image",
+        format: videoId ? "video" : isCarousel ? "carousel" : "image",
+        duracaoSeg: null,
       });
+    }
+  }
+  // 2ª passada: duração só dos vídeos (a régua do body depende dela).
+  if (videoDoAd.size > 0) {
+    const dur = await fetchVideoDurations([...new Set(videoDoAd.values())], token);
+    for (const [adId, videoId] of videoDoAd) {
+      const seg = dur.get(videoId);
+      const meta = out.get(adId);
+      if (meta && seg != null) meta.duracaoSeg = seg;
     }
   }
   return out;
@@ -304,6 +367,7 @@ export async function getMetaAdsForWorkspace(
           cpm: num(r.cpm),
           thumbnailUrl: meta?.thumb ?? null,
           format: meta?.format ?? "image",
+          duracaoSeg: meta?.duracaoSeg ?? null,
           plays: actionValue(r.video_play_actions),
           views3s: pickActionType(r.actions, "video_view"),
           p75: actionValue(r.video_p75_watched_actions),
@@ -699,6 +763,7 @@ export function toTablePayload(d: MetaAdsData): MetaAdsForTable {
       a.plays,
       a.views3s,
       a.p75,
+      a.duracaoSeg,
     ];
   }
   return {
