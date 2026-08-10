@@ -7,6 +7,7 @@ import {
   type PeriodKey,
 } from "@/lib/period";
 import { classify, GRUPO_LABEL } from "@/lib/classify";
+import { labelFromValue, normalizeCanal } from "@/lib/filters";
 
 // Tools expostas pro TON via OpenAI tool calling. Cada tool:
 // - Recebe workspace_id server-side (do HMAC validado) + params do modelo
@@ -308,7 +309,9 @@ export async function executeTool(
           mql: l.mql,
           nome_campanha: l.nome_campanha,
           id_anuncio: l.id_anuncio,
-          canal: l.canal_campanha,
+          // Canal NORMALIZADO (fb→Facebook, ig→Instagram): se o modelo
+          // recebesse o valor cru, contaria os apelidos como canais distintos.
+          canal: labelFromValue(normalizeCanal(l.canal_campanha), "CANAL"),
           resumo_conversa: l.resumo_conversa,
         })),
       };

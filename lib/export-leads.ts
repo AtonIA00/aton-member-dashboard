@@ -11,6 +11,7 @@
 
 import type { LeadRow } from "@/lib/leads";
 import { classify, GRUPO_LABEL, type Grupo } from "@/lib/classify";
+import { labelFromValue, normalizeCanal } from "@/lib/filters";
 
 export type ExportMeta = {
   workspaceName: string;
@@ -94,7 +95,17 @@ const COLUMNS: LeadColumn[] = [
   { header: "Etapa", width: 15, kind: "etapa", value: (l) => GRUPO_LABEL[classify(l.etapa_funil)], align: "center" },
   { header: "Etapa (detalhe)", width: 18, kind: "text", value: (l) => l.etapa_funil ?? "", guardCsv: true },
   { header: "MQL", width: 9, kind: "mql", value: (l) => fmtMqlLabel(l.mql), align: "center" },
-  { header: "Canal", width: 14, kind: "text", value: (l) => l.canal_campanha ?? "" },
+  // Canal NORMALIZADO pra bater com o que a tela mostra: filtrar por
+  // "Facebook" e abrir o arquivo vendo "fb" seria incoerente.
+  {
+    header: "Canal",
+    width: 14,
+    kind: "text",
+    value: (l) =>
+      (l.canal_campanha ?? "").trim() === ""
+        ? ""
+        : labelFromValue(normalizeCanal(l.canal_campanha), "CANAL"),
+  },
   { header: "Cidade", width: 16, kind: "text", value: (l) => l.cidade_campanha ?? "", guardCsv: true },
   { header: "Estado", width: 9, kind: "text", value: (l) => l.estado_campanha ?? "", align: "center" },
   { header: "ID Anúncio", width: 20, kind: "text", value: (l) => l.id_anuncio ?? "", guardCsv: true },

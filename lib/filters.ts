@@ -72,10 +72,28 @@ export const SENTINEL = {
   CIDADE: "sem_cidade",
 } as const;
 
-/** Normaliza valor de canal: NULL/"" → "sem_canal"; resto → lower+trim. */
+/**
+ * Apelidos que o pipeline grava pro MESMO canal. Sem isso o filtro lista
+ * "facebook" e "fb" como opções separadas e reparte os leads entre as duas.
+ * Medido em 2026-08-10: facebook 4.747 + fb 141 · instagram 3.573 +
+ * Instagram 356 + ig 202. (A variação de caixa já era resolvida pelo
+ * toLowerCase abaixo — o problema eram só as abreviações.)
+ */
+const CANAL_ALIAS: Record<string, string> = {
+  fb: "facebook",
+  face: "facebook",
+  ig: "instagram",
+  insta: "instagram",
+  wpp: "whatsapp",
+  zap: "whatsapp",
+};
+
+/** Normaliza valor de canal: NULL/"" → "sem_canal"; resto → lower+trim, com
+ *  apelidos (fb→facebook, ig→instagram) colapsados no canal canônico. */
 export function normalizeCanal(value: string | null | undefined): string {
   const v = (value ?? "").trim().toLowerCase();
-  return v === "" ? SENTINEL.CANAL : v;
+  if (v === "") return SENTINEL.CANAL;
+  return CANAL_ALIAS[v] ?? v;
 }
 
 /** Idem pra campos textuais opcionais: usa sentinela quando NULL/"". */
@@ -358,9 +376,15 @@ export function labelFromValue(value: string, kind: keyof typeof SENTINEL): stri
     case SENTINEL.CIDADE:
       return "Sem cidade";
   }
-  // Capitaliza canais conhecidos.
   if (kind === "CANAL") {
-    return value.charAt(0).toUpperCase() + value.slice(1);
+    // Grafia oficial dos canais conhecidos; o resto só ganha a inicial
+    // maiúscula (capitalizar genérico virava "Whatsapp").
+    const OFICIAL: Record<string, string> = {
+      facebook: "Facebook",
+      instagram: "Instagram",
+      whatsapp: "WhatsApp",
+    };
+    return OFICIAL[value] ?? value.charAt(0).toUpperCase() + value.slice(1);
   }
   return value;
 }
