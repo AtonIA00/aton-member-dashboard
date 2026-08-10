@@ -135,8 +135,11 @@ export const VIDEO_KPI = {
    *  [p25, mediana, p75] da carteira. Verde = quartil superior. */
   retHook: { t: [18, 26, 35] as [number, number, number], meta: "≥ 35%" },
   /** Régua BASE do body (vídeo de 35-50s, a faixa mais comum). Use
-   *  bodyThresholds(duracao) — não esta constante direto. */
-  retBody: { t: [1.9, 2.8, 4.9] as [number, number, number], meta: "≥ 2,8%" },
+   *  bodyThresholds(duracao) — não esta constante direto.
+   *  `meta` tem que ser SEMPRE o t[2] (barra do verde), igual ao hook: rotular
+   *  com a mediana fazia o card prometer 2,8% enquanto a célula só ficava verde
+   *  em 4,9% — o Murillo pegou isso em 2026-08-10. */
+  retBody: { t: [1.9, 2.8, 4.9] as [number, number, number], meta: "≥ 4,9%" },
 } as const;
 
 /**

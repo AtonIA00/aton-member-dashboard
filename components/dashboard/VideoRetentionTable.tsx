@@ -167,6 +167,7 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
           value={pct1(aggHook)}
           sub={`${int(tot.views3s)} de ${int(tot.plays)}`}
           meta={VIDEO_KPI.retHook.meta}
+          metaTip="Quartil superior da carteira Aton (p75). A mediana é 26% — acima dela já fica amarelo."
           ok={aggHook >= VIDEO_KPI.retHook.t[2]}
         />
         <FunnelCard
@@ -174,6 +175,7 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
           value={pct1(aggBody)}
           sub={`${int(tot.p75)} de ${int(tot.plays)}`}
           meta={VIDEO_KPI.retBody.meta}
+          metaTip="Quartil superior da carteira para vídeo de 35-50s. Por criativo a régua é AJUSTADA pela duração: verde em 5,5% (até 35s), 4,9% (35-50s) ou 3,4% (50s+) — alcançar 75% de um vídeo longo é mecanicamente mais difícil."
           ok={aggBody >= VIDEO_KPI.retBody.t[2]}
         />
         <FunnelCard
@@ -386,6 +388,7 @@ function FunnelCard({
   value,
   sub,
   meta,
+  metaTip,
   ok,
   neutral,
 }: {
@@ -393,6 +396,8 @@ function FunnelCard({
   value: string;
   sub: string;
   meta?: string;
+  /** Explica de onde vem a meta — e, no body, que ela varia por duração. */
+  metaTip?: string;
   ok?: boolean;
   neutral?: boolean;
 }) {
@@ -418,12 +423,12 @@ function FunnelCard({
         {meta && (
           <span
             className={
-              "rounded px-1 font-semibold " +
+              "cursor-help rounded px-1 font-semibold " +
               (ok
                 ? "bg-[#10b981]/12 text-[#10b981]"
                 : "bg-[color:var(--muted)] text-[color:var(--muted-foreground)]")
             }
-            title="Meta da metodologia Richard"
+            title={metaTip ?? "Barra do verde — quartil superior da carteira Aton."}
           >
             meta {meta}
           </span>
