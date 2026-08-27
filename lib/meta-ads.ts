@@ -456,6 +456,10 @@ export type CoreAdInsight = {
   video_ret_hook: number | null;
   /** video_p75 ÷ video_plays (%). Meta: >2% (p25 real da carteira: 1,9%). */
   video_ret_body: number | null;
+  /** Miniatura 256px do criativo (mesma que o dash mostra) — o Pulso do Core
+   *  a exibe nas telas de criativos/retenção pra o assinante reconhecer a
+   *  peça de bater o olho. null quando a Meta não devolve (best-effort). */
+  thumbnail_url: string | null;
 };
 
 export type CoreMetaInsights = {
@@ -503,15 +507,22 @@ const round2c = (n: number) => Math.round(n * 100) / 100;
 
 /** Últimos N dias em UTC, inclusive hoje — idêntico ao resolvePeriod("7d"/
  *  "14d"/"30d") do dash, pra Core e tela falarem do mesmo intervalo. */
-function lastNDaysRange(days: number): { de: string; ate: string } {
+function lastNDaysRange(days: number, until?: string): { de: string; ate: string } {
   const isoDay = (d: Date) =>
     `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
       d.getUTCDate(),
     ).padStart(2, "0")}`;
+  // until valido e nao-futuro vira o fim do periodo; qualquer outra coisa cai
+  // no comportamento antigo (hoje) — o chamador legado nao muda.
   const now = new Date();
-  const from = new Date(now);
+  let end = now;
+  if (until && /^d{4}-d{2}-d{2}$/.test(until)) {
+    const parsed = new Date(`${until}T12:00:00Z`);
+    if (!Number.isNaN(parsed.getTime()) && parsed <= now) end = parsed;
+  }
+  const from = new Date(end);
   from.setUTCDate(from.getUTCDate() - (days - 1));
-  return { de: isoDay(from), ate: isoDay(now) };
+  return { de: isoDay(from), ate: isoDay(end) };
 }
 
 export type CoreLookupResult =
@@ -527,6 +538,10 @@ export type CoreLookupResult =
 export async function getMetaInsightsForCore(
   workspaceId: string,
   days: number,
+  /** Fim do período (YYYY-MM-DD, inclusivo). Sem ele, hoje — mas o Core usa a
+   *  janela ASSENTADA de leads (termina D-2): sem este parâmetro, verba e
+   *  leads do mesmo relatório cobriam períodos defasados em ~3 dias. */
+  until?: string,
 ): Promise<CoreLookupResult> {
   const token = process.env.META_SYSTEM_USER_TOKEN;
   if (!token) return { ok: false, reason: "no_token" };
@@ -534,7 +549,7 @@ export async function getMetaInsightsForCore(
   const account = await getAccountForWorkspace(workspaceId);
   if (!account) return { ok: false, reason: "not_mapped" };
 
-  const { de, ate } = lastNDaysRange(days);
+  const { de, ate } = lastNDaysRange(days, until);
   const cacheKey = `${account.act_id}|${de}|${ate}`;
   const cached = coreCache.get(cacheKey);
   const now = Date.now();
@@ -600,6 +615,7 @@ export async function getMetaInsightsForCore(
         video_play_rate: impressions > 0 && plays > 0 ? round2c((plays / impressions) * 100) : null,
         video_ret_hook: plays > 0 ? round2c((views3s / plays) * 100) : null,
         video_ret_body: plays > 0 ? round2c((p75 / plays) * 100) : null,
+        thumbnail_url: null,
       });
     }
     url = (json.paging as { next?: string } | undefined)?.next ?? null;
@@ -609,6 +625,17 @@ export async function getMetaInsightsForCore(
     // Serve o último conhecido marcado como stale; sem cache → erro explícito.
     if (cached) return { ok: true, data: { ...cached.data, stale: true } };
     return { ok: false, reason: "upstream_failed" };
+  }
+
+  // Miniaturas (best-effort, mesmo buscador do dash): falha vira null — a
+  // tabela do Pulso degrada pro placeholder, nunca derruba o dado de custo.
+  if (porAnuncio.length) {
+    try {
+      const thumbs = await fetchCreativeThumbs(porAnuncio.map((a) => a.ad_id), token);
+      for (const a of porAnuncio) a.thumbnail_url = thumbs.get(a.ad_id)?.thumb ?? null;
+    } catch {
+      /* cosmético — segue sem thumb */
+    }
   }
 
   const total = porAnuncio.reduce(
