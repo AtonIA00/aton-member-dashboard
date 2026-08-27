@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
   // leads pra verba e leads do mesmo relatório cobrirem o MESMO período —
   // sem ele, "days até hoje" (comportamento antigo, chamadores legados).
   const untilRaw = (q.get("until") ?? "").trim();
-  if (untilRaw && !/^d{4}-d{2}-d{2}$/.test(untilRaw)) {
+  if (untilRaw && !/^\d{4}-\d{2}-\d{2}$/.test(untilRaw)) {
     return NextResponse.json(
       { error: "invalid_until", detail: "YYYY-MM-DD" },
       { status: 400 },

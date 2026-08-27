@@ -516,7 +516,7 @@ function lastNDaysRange(days: number, until?: string): { de: string; ate: string
   // no comportamento antigo (hoje) — o chamador legado nao muda.
   const now = new Date();
   let end = now;
-  if (until && /^d{4}-d{2}-d{2}$/.test(until)) {
+  if (until && /^\d{4}-\d{2}-\d{2}$/.test(until)) {
     const parsed = new Date(`${until}T12:00:00Z`);
     if (!Number.isNaN(parsed.getTime()) && parsed <= now) end = parsed;
   }
