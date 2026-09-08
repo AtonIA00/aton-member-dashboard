@@ -1,6 +1,6 @@
 import "server-only";
 import { getSupabaseAdmin } from "./supabase/server";
-import type { DateRange } from "./period";
+import { isoDay, type DateRange } from "./period";
 import type { CreativeFormat, MetaAdTuple, MetaAdsForTable } from "./meta-ads-kpi";
 
 // Tipos/metas client-safe vivem no meta-ads-kpi.ts (este arquivo é
@@ -106,6 +106,44 @@ async function getAccountForWorkspace(workspaceId: string): Promise<AccountRow |
   }
   accountCache.set(workspaceId, { ts: now, row: data ?? null });
   return data ?? null;
+}
+
+// ── Início da base de leads do workspace (cache 60min) ─────────────────────
+// "Todo período" no dash virava date_preset=maximum: até ~37 meses de
+// histórico da CONTA de anúncios. Só que a base de leads da Aton de cada
+// assinante começa muito depois — verba de anos dividida por leads de meses
+// inflava o investimento exibido em 3,4x na carteira (ISJ Rio Preto: 12,8x;
+// Emive: 9,3x). Ancorar o "Todo período" no 1º lead desta base põe
+// numerador (verba) e denominador (leads) na MESMA janela.
+//
+// Deliberadamente ANTES das exclusões de lead de teste: a data marca quando
+// a base passou a rastrear o assinante, não quem foi marcado como teste
+// depois. Praticamente imutável → TTL longo.
+const baseStartCache = new Map<string, { ts: number; day: string | null }>();
+const BASE_START_TTL = 60 * 60_000;
+
+async function getBaseStartForWorkspace(workspaceId: string): Promise<string | null> {
+  const now = Date.now();
+  const hit = baseStartCache.get(workspaceId);
+  if (hit && now - hit.ts < BASE_START_TTL) return hit.day;
+
+  const supabase = getSupabaseAdmin();
+  // Mesma tabela do agregado de leads (lib/leads.ts).
+  const { data, error } = await supabase
+    .from("terrace360_leads_atonhub")
+    .select("data")
+    .eq("id_workspace_responsavel", workspaceId)
+    .order("data", { ascending: true })
+    .limit(1)
+    .maybeSingle<{ data: string | null }>();
+  if (error) {
+    // Sem cache do erro: tenta de novo no próximo render (cai no maximum).
+    console.error("[meta-ads] base start lookup", { workspaceId, message: error.message });
+    return null;
+  }
+  const day = data?.data ? String(data.data).slice(0, 10) : null;
+  baseStartCache.set(workspaceId, { ts: now, day });
+  return day;
 }
 
 // ── Insights (cache 15min por act+range+ids; negativo 2min) ────────────────
@@ -295,19 +333,30 @@ export async function getMetaAdsForWorkspace(
   if (!account) return null;
 
   const ids = [...new Set(relevantAdIds.map((s) => s.trim()).filter((s) => /^\d{5,25}$/.test(s)))];
-  const rangeKey = `${range.from ?? "max"}|${range.to ?? "max"}`;
+  // Range do dash → parâmetro do Meta. "Todo período" (from/to nulos) é
+  // ancorado no 1º lead desta base — ver getBaseStartForWorkspace.
+  let since = range.from;
+  let until = range.to;
+  if (!since || !until) {
+    const baseStart = await getBaseStartForWorkspace(workspaceId);
+    if (baseStart) {
+      since = baseStart;
+      until = isoDay(new Date());
+    }
+  }
+  const rangeParam =
+    since && until
+      ? `time_range=${encodeURIComponent(JSON.stringify({ since, until }))}`
+      : "date_preset=maximum"; // workspace sem lead nenhum: comportamento antigo
+
+  // Chave de cache = janela EFETIVA (o "Todo período" resolvido muda de dia).
+  const rangeKey = `${since ?? "max"}|${until ?? "max"}`;
   const cacheKey = `${account.act_id}|${rangeKey}|${ids.slice().sort().join(",")}`;
   const now = Date.now();
   const hit = insightsCache.get(cacheKey);
   if (hit && now - hit.ts < INSIGHTS_TTL) return hit.data;
   const neg = negativeCache.get(cacheKey);
   if (neg && now - neg < NEGATIVE_TTL) return null;
-
-  // Range do dash → parâmetro do Meta. "Todo período" → date_preset=maximum.
-  const rangeParam =
-    range.from && range.to
-      ? `time_range=${encodeURIComponent(JSON.stringify({ since: range.from, until: range.to }))}`
-      : "date_preset=maximum";
 
   const G = "https://graph.facebook.com/v21.0";
   const tokenParam = `access_token=${encodeURIComponent(token)}`;

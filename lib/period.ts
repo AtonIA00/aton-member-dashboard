@@ -51,7 +51,7 @@ export type DateRange = {
   to: string | null;
 };
 
-function isoDay(d: Date): string {
+export function isoDay(d: Date): string {
   // Sempre formato UTC YYYY-MM-DD (sem horário). Garante consistência com
   // o `data` da terrace360 que vem meia-noite UTC.
   const y = d.getUTCFullYear();

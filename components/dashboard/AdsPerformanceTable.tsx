@@ -294,7 +294,7 @@ export function AdsPerformanceTable({
 
       {metaAds && (
         <div className="border-t border-[color:var(--border)] px-6 py-2 text-[10px] leading-relaxed text-[color:var(--muted-foreground)]/70">
-          Investimento, CPM, CTR de link e CPC via <strong className="font-semibold">Meta Ads</strong> (conta vinculada, mesmo período do filtro).
+          Investimento, CPM, CTR de link e CPC via <strong className="font-semibold">Meta Ads</strong> (conta vinculada, mesmo período do filtro — em “Todo período”, a partir do 1º lead desta base).
           CTR link = cliques no link ÷ impressões (exclui reações/comentários/perfil); CPM = custo por mil impressões.
           Leia da esquerda pra direita como funil: quanto custa <em>aparecer</em> (CPM) → quem <em>clica</em> (CTR) → quanto custa o <em>lead</em> (CPL).
           Contagem de leads: <strong className="font-semibold">sempre a desta base Aton</strong> (fonte da verdade) — CPL, R$/MQL e R$/Conv. são investimento ÷ leads reais.
