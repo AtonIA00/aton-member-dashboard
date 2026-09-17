@@ -469,6 +469,11 @@ export type CoreAdInsight = {
   ad_id: string;
   ad_name: string | null;
   campaign_name: string | null;
+  /** Estrutura — vem do próprio Insights, sem chamada extra. null quando a
+   *  Meta omite (objeto apagado depois de gastar). */
+  campaign_id: string | null;
+  adset_id: string | null;
+  adset_name: string | null;
   spend: number;
   impressions: number;
   /** Cliques TOTAIS (campo `clicks`: inclui reação, comentário, perfil). */
@@ -509,6 +514,48 @@ export type CoreAdInsight = {
    *  a exibe nas telas de criativos/retenção pra o assinante reconhecer a
    *  peça de bater o olho. null quando a Meta não devolve (best-effort). */
   thumbnail_url: string | null;
+  /** Plataforma REALIZADA (breakdowns=publisher_platform): onde a verba
+   *  efetivamente entregou. null = a chamada de breakdown falhou ("não
+   *  sei"); [] = a Meta respondeu e não houve entrega no período. */
+  por_plataforma: CorePlatformSplit[] | null;
+};
+
+/** Split por plataforma. `platform` vai CRU como a Meta devolve — facebook,
+ *  instagram, audience_network, messenger, threads, whatsapp… — sem
+ *  allowlist, senão uma plataforma nova sumiria do relatório calada. */
+export type CorePlatformSplit = {
+  platform: string;
+  spend: number;
+  impressions: number;
+};
+
+export type CoreAdset = {
+  adset_id: string;
+  adset_name: string | null;
+  /** ⚠️ JÁ CONVERTIDO de centavos pra MOEDA — mesma escala de `spend`
+   *  (a Meta devolve orçamento na unidade mínima: 6000 = R$ 60,00).
+   *  null = não se aplica (orçamento está na campanha, CBO) ou desconhecido.
+   *  Nunca 0. */
+  daily_budget: number | null;
+  lifetime_budget: number | null;
+  /** Posicionamento CONFIGURADO no targeting. ⚠️ null = placements
+   *  AUTOMÁTICOS (a Meta não devolve o campo nesse caso), ou seja TODAS as
+   *  plataformas elegíveis — não "nenhuma". Medido na carteira em
+   *  17/09/2026: Brows 167/214 conjuntos com placement manual, Emive e Sá
+   *  Cavalcante 0 (tudo automático). Compare com o REALIZADO em
+   *  por_anuncio[].por_plataforma. */
+  publisher_platforms: string[] | null;
+};
+
+export type CoreCampaign = {
+  campaign_id: string;
+  campaign_name: string | null;
+  /** Mesma unidade/regra de null do conjunto. Orçamento vive na campanha
+   *  (CBO) OU no conjunto — por isso os dois níveis vêm, com null onde não
+   *  se aplica, em vez de a gente escolher um. */
+  daily_budget: number | null;
+  lifetime_budget: number | null;
+  conjuntos: CoreAdset[];
 };
 
 export type CoreMetaInsights = {
@@ -536,8 +583,17 @@ export type CoreMetaInsights = {
     video_p75: number;
     video_ret_hook: number | null;
     video_ret_body: number | null;
+    /** Mix de plataforma da CONTA no período (soma dos anúncios). null = a
+     *  chamada de breakdown falhou. */
+    por_plataforma: CorePlatformSplit[] | null;
   };
   por_anuncio: CoreAdInsight[];
+  /** Estrutura + orçamento das campanhas que tiveram entrega no período.
+   *  Montada a partir dos ANÚNCIOS (não do edge /campaigns): campanha ou
+   *  conjunto apagado depois de gastar continua aparecendo, só com
+   *  orçamento null. Campanha sem entrega no período não entra — o
+   *  relatório fala do período. */
+  campanhas: CoreCampaign[];
   /** true = veio de cache OU a chamada à Meta falhou e servimos o último
    *  valor conhecido. NUNCA devolvemos zero silencioso (ver rota: falha sem
    *  cache = 502, não payload zerado). */
@@ -607,14 +663,15 @@ export async function getMetaInsightsForCore(
   }
 
   const fields =
-    "ad_id,ad_name,campaign_name,spend,impressions,clicks,inline_link_clicks," +
+    "ad_id,ad_name,campaign_name,campaign_id,adset_id,adset_name," +
+    "spend,impressions,clicks,inline_link_clicks," +
     "inline_link_click_ctr,cost_per_inline_link_click,cpm,actions,cost_per_action_type," +
     "account_currency,video_play_actions,video_p75_watched_actions";
   const timeRange = encodeURIComponent(JSON.stringify({ since: de, until: ate }));
+  const base = `https://graph.facebook.com/v21.0/${account.act_id}`;
+  const tokenParam = `access_token=${encodeURIComponent(token)}`;
   let url: string | null =
-    `https://graph.facebook.com/v21.0/${account.act_id}/insights?level=ad` +
-    `&time_range=${timeRange}&fields=${fields}&limit=200` +
-    `&access_token=${encodeURIComponent(token)}`;
+    `${base}/insights?level=ad&time_range=${timeRange}&fields=${fields}&limit=200&${tokenParam}`;
 
   const porAnuncio: CoreAdInsight[] = [];
   let moeda = "BRL";
@@ -643,6 +700,9 @@ export async function getMetaInsightsForCore(
         ad_id: adId,
         ad_name: (r.ad_name as string) ?? null,
         campaign_name: (r.campaign_name as string) ?? null,
+        campaign_id: (r.campaign_id as string) ?? null,
+        adset_id: (r.adset_id as string) ?? null,
+        adset_name: (r.adset_name as string) ?? null,
         // Crus e exatos (spend/impressions/clicks/link_clicks/meta_leads) —
         // é com eles que o Core recalcula o que precisa. Só as métricas de
         // conveniência (ctr/cpc/cpm/cpl) vão arredondadas a 2 casas.
@@ -665,6 +725,7 @@ export async function getMetaInsightsForCore(
         video_ret_hook: plays > 0 ? round2c((views3s / plays) * 100) : null,
         video_ret_body: plays > 0 ? round2c((p75 / plays) * 100) : null,
         thumbnail_url: null,
+        por_plataforma: null,
       });
     }
     url = (json.paging as { next?: string } | undefined)?.next ?? null;
@@ -676,6 +737,26 @@ export async function getMetaInsightsForCore(
     return { ok: false, reason: "upstream_failed" };
   }
 
+  // ── Extras do Pulso: plataforma REALIZADA + estrutura/orçamento ─────────
+  // 3 chamadas FIXAS por conta, em paralelo — nunca 1+N (puxar targeting
+  // anúncio a anúncio estoura limite de taxa). Medido na carteira inteira em
+  // 17/09/2026: a maior conta (Brows) devolve 46 linhas de breakdown, 55
+  // campanhas e 214 conjuntos — tudo numa página só, e as 15 contas
+  // respondem sem erro de permissão.
+  // Falha aqui NÃO derruba o endpoint: vira null (= "não sei"), distinto de
+  // [] (= "a Meta respondeu e não havia nada").
+  const extrasP = Promise.all([
+    fetchAllPages(
+      `${base}/insights?level=ad&time_range=${timeRange}` +
+        `&breakdowns=publisher_platform&fields=ad_id,spend,impressions&limit=500&${tokenParam}`,
+    ),
+    fetchAllPages(`${base}/campaigns?fields=id,name,daily_budget,lifetime_budget&limit=500&${tokenParam}`),
+    fetchAllPages(
+      `${base}/adsets?fields=id,name,campaign_id,daily_budget,lifetime_budget,` +
+        `targeting{publisher_platforms}&limit=500&${tokenParam}`,
+    ),
+  ]);
+
   // Miniaturas (best-effort, mesmo buscador do dash): falha vira null — a
   // tabela do Pulso degrada pro placeholder, nunca derruba o dado de custo.
   if (porAnuncio.length) {
@@ -686,6 +767,98 @@ export async function getMetaInsightsForCore(
       /* cosmético — segue sem thumb */
     }
   }
+
+  const [platRows, campRows, adsetRows] = await extrasP;
+  if (!platRows) console.error("[meta-ads] breakdown de plataforma falhou", { actId: account.act_id });
+  if (!campRows || !adsetRows) console.error("[meta-ads] estrutura/orçamento falhou", { actId: account.act_id });
+
+  // Plataforma realizada: por anúncio e somada na conta.
+  let porPlataformaTotal: CorePlatformSplit[] | null = null;
+  if (platRows) {
+    const byAd = new Map<string, CorePlatformSplit[]>();
+    const somaPlat = new Map<string, { spend: number; impressions: number }>();
+    for (const r of platRows) {
+      const adId = String(r.ad_id ?? "").trim();
+      const platform = String(r.publisher_platform ?? "").trim();
+      if (!adId || !platform) continue;
+      const spend = num(r.spend);
+      const impressions = num(r.impressions);
+      const lista = byAd.get(adId) ?? [];
+      lista.push({ platform, spend: round2c(spend), impressions });
+      byAd.set(adId, lista);
+      const t = somaPlat.get(platform) ?? { spend: 0, impressions: 0 };
+      somaPlat.set(platform, { spend: t.spend + spend, impressions: t.impressions + impressions });
+    }
+    for (const a of porAnuncio) {
+      a.por_plataforma = (byAd.get(a.ad_id) ?? []).sort((x, y) => y.spend - x.spend);
+    }
+    porPlataformaTotal = [...somaPlat]
+      .map(([platform, v]) => ({ platform, spend: round2c(v.spend), impressions: v.impressions }))
+      .sort((a, b) => b.spend - a.spend);
+  }
+
+  // Estrutura: a árvore vem dos ANÚNCIOS (autoritativa pro período); os
+  // edges só enriquecem com orçamento e placement configurado.
+  const orcCampanha = new Map<
+    string,
+    { daily: number | null; lifetime: number | null; name: string | null }
+  >();
+  for (const c of campRows ?? []) {
+    const id = String(c.id ?? "").trim();
+    if (!id) continue;
+    orcCampanha.set(id, {
+      daily: budgetToMajor(c.daily_budget),
+      lifetime: budgetToMajor(c.lifetime_budget),
+      name: (c.name as string) ?? null,
+    });
+  }
+  const orcConjunto = new Map<
+    string,
+    { daily: number | null; lifetime: number | null; platforms: string[] | null }
+  >();
+  for (const s of adsetRows ?? []) {
+    const id = String(s.id ?? "").trim();
+    if (!id) continue;
+    const alvo = s.targeting as { publisher_platforms?: unknown } | undefined;
+    const plats = Array.isArray(alvo?.publisher_platforms)
+      ? (alvo.publisher_platforms as unknown[]).map((p) => String(p))
+      : null;
+    orcConjunto.set(id, {
+      daily: budgetToMajor(s.daily_budget),
+      lifetime: budgetToMajor(s.lifetime_budget),
+      platforms: plats,
+    });
+  }
+
+  const campMap = new Map<string, CoreCampaign>();
+  const conjuntosVistos = new Set<string>();
+  for (const a of porAnuncio) {
+    if (!a.campaign_id) continue;
+    let camp = campMap.get(a.campaign_id);
+    if (!camp) {
+      const o = orcCampanha.get(a.campaign_id);
+      camp = {
+        campaign_id: a.campaign_id,
+        campaign_name: a.campaign_name ?? o?.name ?? null,
+        daily_budget: o?.daily ?? null,
+        lifetime_budget: o?.lifetime ?? null,
+        conjuntos: [],
+      };
+      campMap.set(a.campaign_id, camp);
+    }
+    if (a.adset_id && !conjuntosVistos.has(a.adset_id)) {
+      conjuntosVistos.add(a.adset_id);
+      const o = orcConjunto.get(a.adset_id);
+      camp.conjuntos.push({
+        adset_id: a.adset_id,
+        adset_name: a.adset_name,
+        daily_budget: o?.daily ?? null,
+        lifetime_budget: o?.lifetime ?? null,
+        publisher_platforms: o?.platforms ?? null,
+      });
+    }
+  }
+  const campanhas = [...campMap.values()];
 
   const total = porAnuncio.reduce(
     (acc, a) => ({
@@ -732,14 +905,39 @@ export async function getMetaInsightsForCore(
         total.video_plays > 0 ? round2((total.video_views_3s / total.video_plays) * 100) : null,
       video_ret_body:
         total.video_plays > 0 ? round2((total.video_p75 / total.video_plays) * 100) : null,
+      por_plataforma: porPlataformaTotal,
     },
     por_anuncio: porAnuncio.sort((a, b) => b.spend - a.spend),
+    campanhas,
     stale: false,
     fetched_at: new Date().toISOString(),
   };
 
   coreCache.set(cacheKey, { ts: now, data });
   return { ok: true, data };
+}
+
+/** Percorre um edge da conta até acabar (com teto de páginas). null = a Meta
+ *  falhou — quem chama degrada pra null, nunca inventa lista vazia. */
+async function fetchAllPages(url: string): Promise<Array<Record<string, unknown>> | null> {
+  const out: Array<Record<string, unknown>> = [];
+  let next: string | null = url;
+  for (let page = 0; next && page < CORE_MAX_PAGES; page++) {
+    const json: Record<string, unknown> | null = await fetchJson(next);
+    if (!json || json.error) return null;
+    out.push(...((json.data as Array<Record<string, unknown>> | undefined) ?? []));
+    next = (json.paging as { next?: string } | undefined)?.next ?? null;
+  }
+  return out;
+}
+
+/** Orçamento da Meta vem na unidade MÍNIMA da moeda (6000 = R$ 60,00).
+ *  Converte pra a mesma escala do spend. Ausente ou "0" (conjunto sob CBO)
+ *  vira null: zero aqui não é "orçamento zero", é "não se aplica" — e o
+ *  relatório leria 0 como informação. */
+function budgetToMajor(v: unknown): number | null {
+  const n = num(v);
+  return n > 0 ? round2c(n / 100) : null;
 }
 
 // action_types que a Meta usa pra lead (ordem de preferência). Só pro campo

@@ -24,6 +24,25 @@ export const dynamic = "force-dynamic";
 // retorno-comercial) — canal simétrico, nenhum segredo novo. Sem cookie/sessão:
 // o chamador é serviço, não navegador.
 //
+// Desde 17/09/2026 devolve também (aditivo, nada renomeado/removido):
+//   por_anuncio[].campaign_id / adset_id / adset_name — estrutura, vinda do
+//     próprio Insights, sem chamada extra;
+//   por_anuncio[].por_plataforma e total.por_plataforma — onde a verba
+//     REALMENTE entregou (breakdowns=publisher_platform). platform vai cru
+//     (facebook, instagram, audience_network, messenger, threads,
+//     whatsapp…), sem allowlist;
+//   campanhas[] — árvore campanha → conjuntos com daily_budget e
+//     lifetime_budget nos DOIS níveis (orçamento pode ser CBO na campanha ou
+//     no conjunto; null onde não se aplica) e publisher_platforms, que é o
+//     placement CONFIGURADO.
+//
+// ⚠️ Orçamento: a Meta devolve na unidade MÍNIMA da moeda (6000 = R$ 60,00).
+// Aqui já sai CONVERTIDO pra a mesma escala do spend — R$ 60,00 é 60.
+// ⚠️ publisher_platforms null = placements AUTOMÁTICOS (a Meta omite o campo
+// nesse caso) = todas as plataformas elegíveis, NÃO "nenhuma".
+// ⚠️ por_plataforma null = a chamada de breakdown falhou ("não sei");
+// [] = a Meta respondeu e não houve entrega. Nunca 0 pra dado ausente.
+//
 // A chave é o uchat_workspace_id (o Core raciocina por assinante); o mapa
 // workspace → act_id vive em wa_meta_ads_accounts.
 //
