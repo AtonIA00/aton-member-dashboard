@@ -151,6 +151,12 @@ export function FilterBar({ dimensions, totalNoPeriodo }: Props) {
               })),
             ]}
             minWidth="12.5rem"
+            hint={
+              "A porta vem da configuração ATUAL do anúncio na Meta. " +
+              "Se o anunciante trocou o destino depois (de WhatsApp para formulário, " +
+              "por exemplo), leads antigos aparecem na porta de hoje, não na da época. " +
+              "Confiável para períodos recentes; em “Todo período”, leia com cuidado."
+            }
           />
         )}
 
@@ -215,6 +221,7 @@ function Select({
   options,
   minWidth,
   disabled,
+  hint,
 }: {
   label: string;
   value: string;
@@ -222,10 +229,17 @@ function Select({
   options: Array<{ value: string; label: string }>;
   minWidth?: string;
   disabled?: boolean;
+  /** Ressalva do filtro — vira tooltip no rótulo. */
+  hint?: string;
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[color:var(--muted-foreground)]">
+      <span
+        title={hint}
+        className={`text-[10px] font-semibold uppercase tracking-[0.15em] text-[color:var(--muted-foreground)]${
+          hint ? " cursor-help decoration-dotted underline-offset-4 [text-decoration-line:underline]" : ""
+        }`}
+      >
         {label}
       </span>
       <div className="relative" style={{ minWidth }}>
