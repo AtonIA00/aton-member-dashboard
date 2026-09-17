@@ -1,5 +1,6 @@
 import { classify, GRUPO_LABEL, type Grupo } from "./classify";
 import type { LeadRow } from "./leads";
+import { ENTRADA_LABEL, ENTRADA_ORDEM, type EntradaLead } from "./meta-ads-kpi";
 
 // Filtros avançados do dashboard. Espelhados em URL params pra deep-linking
 // e persistência sem state local. Default ausente em todos os campos = "Todos".
@@ -27,6 +28,10 @@ export type Filters = {
   cidade?: string;         // nome cidade, ou "sem_cidade"
   mql?: MqlValue;
   etapa?: EtapaKey;
+  /** Porta de entrada do lead: EntradaLead ou "sem_entrada". Diferente dos
+   *  outros filtros, NÃO sai de uma coluna do lead — vem do anúncio, via
+   *  Meta. Sem conta Meta vinculada a dimensão fica vazia e o seletor some. */
+  entrada?: string;
 };
 
 const ALL_FILTER_KEYS = [
@@ -37,6 +42,7 @@ const ALL_FILTER_KEYS = [
   "cidade",
   "mql",
   "etapa",
+  "entrada",
 ] as const;
 
 const ETAPA_GROUP_MAP: Record<EtapaKey, Grupo> = {
@@ -64,12 +70,30 @@ export const MQL_LABEL: Record<MqlValue, string> = {
 };
 
 // Sentinelas pra "sem valor" — texto seguro em URL e fácil de identificar.
+/**
+ * Porta de entrada de UM lead. O vínculo é lead.id_anuncio → anúncio →
+ * (destino do conjunto + mensagem de boas-vindas do criativo).
+ * Lead orgânico (sem id_anuncio) e anúncio não classificável caem juntos no
+ * sentinela: são "não sei", e separá-los daria uma precisão que não existe.
+ */
+export function entradaDoLead(
+  idAnuncio: string | null | undefined,
+  mapa?: Map<string, EntradaLead | null> | null,
+): string {
+  const ad = (idAnuncio ?? "").trim();
+  if (!ad || !mapa) return SENTINEL.ENTRADA;
+  return mapa.get(ad) ?? SENTINEL.ENTRADA;
+}
+
 export const SENTINEL = {
   CAMPANHA: "sem_campanha",
   ANUNCIO: "sem_id",
   CANAL: "sem_canal",
   ESTADO: "sem_estado",
   CIDADE: "sem_cidade",
+  /** Lead sem anúncio rastreável, ou cujo anúncio a Meta não classifica
+   *  (vídeo, perfil, conjunto apagado). */
+  ENTRADA: "sem_entrada",
 } as const;
 
 /**
@@ -141,6 +165,7 @@ export function parseFilters(
     cidade: get("cidade"),
     mql,
     etapa,
+    entrada: get("entrada"),
   };
 }
 
@@ -178,6 +203,7 @@ export function dropInvalidFilters(
     canais: string[];
     estados: string[];
     cidades: Array<{ nome: string }>;
+    entradas: string[];
   },
   workspaceId: string,
 ): Filters {
@@ -205,6 +231,11 @@ export function dropInvalidFilters(
     delete clean.cidade;
   }
 
+  if (clean.entrada && !dimensions.entradas.includes(clean.entrada)) {
+    dropped.push(`entrada=${clean.entrada}`);
+    delete clean.entrada;
+  }
+
   if (dropped.length > 0) {
     console.warn("[filters] dropping invalid filters", {
       workspaceId,
@@ -227,7 +258,13 @@ export function hasAnyFilter(filters: Filters): boolean {
  * Implementação O(N) com um único pass — Cleide stress (1818) leva < 5ms
  * benchmark local.
  */
-export function applyFilters(leads: LeadRow[], filters: Filters): LeadRow[] {
+export function applyFilters(
+  leads: LeadRow[],
+  filters: Filters,
+  /** Anúncio → porta de entrada. Só precisa vir quando filters.entrada está
+   *  ativo; sem ele todo lead cai no sentinela. */
+  entradaPorAnuncio?: Map<string, EntradaLead | null> | null,
+): LeadRow[] {
   if (!hasAnyFilter(filters)) return leads;
 
   const filterEtapaGrupo: Grupo | undefined = filters.etapa
@@ -253,6 +290,9 @@ export function applyFilters(leads: LeadRow[], filters: Filters): LeadRow[] {
     if (filters.cidade) {
       const c = normalizeOrSentinel(l.cidade_campanha, SENTINEL.CIDADE);
       if (c !== filters.cidade) return false;
+    }
+    if (filters.entrada) {
+      if (entradaDoLead(l.id_anuncio, entradaPorAnuncio) !== filters.entrada) return false;
     }
     if (filters.mql) {
       const v = (l.mql ?? "").toLowerCase().trim();
@@ -282,6 +322,9 @@ export type Dimensions = {
     nome: string;
     estado: string; // pra cascade
   }>;
+  /** Portas de entrada presentes no recorte, na ordem de exibição. Vazio
+   *  quando não há dado de Meta — aí o seletor nem aparece. */
+  entradas: string[];
 };
 
 /**
@@ -291,7 +334,10 @@ export type Dimensions = {
  * Cascade depende de saber pra cada anúncio qual sua campanha, e pra cada
  * cidade qual seu estado — por isso anuncios/cidades não são listas simples.
  */
-export function computeDimensions(leads: LeadRow[]): Dimensions {
+export function computeDimensions(
+  leads: LeadRow[],
+  entradaPorAnuncio?: Map<string, EntradaLead | null> | null,
+): Dimensions {
   // Campanhas com count desc.
   const campCount = new Map<string, number>();
   for (const l of leads) {
@@ -359,7 +405,18 @@ export function computeDimensions(leads: LeadRow[]): Dimensions {
       return a.nome.localeCompare(b.nome);
     });
 
-  return { campanhas, anuncios, canais, estados, cidades };
+  // Portas de entrada presentes no recorte. Sem mapa da Meta a lista sai
+  // vazia de propósito: o seletor some, em vez de mostrar só "sem anúncio
+  // rastreado", que não é filtro, é ruído.
+  const entradas: string[] = [];
+  if (entradaPorAnuncio && entradaPorAnuncio.size > 0) {
+    const vistas = new Set<string>();
+    for (const l of leads) vistas.add(entradaDoLead(l.id_anuncio, entradaPorAnuncio));
+    for (const e of ENTRADA_ORDEM) if (vistas.has(e)) entradas.push(e);
+    if (vistas.has(SENTINEL.ENTRADA)) entradas.push(SENTINEL.ENTRADA);
+  }
+
+  return { campanhas, anuncios, canais, estados, cidades, entradas };
 }
 
 // Helper de label legível pra UI a partir do valor cru/sentinela.
@@ -375,6 +432,11 @@ export function labelFromValue(value: string, kind: keyof typeof SENTINEL): stri
       return "Sem estado";
     case SENTINEL.CIDADE:
       return "Sem cidade";
+    case SENTINEL.ENTRADA:
+      return "Sem anúncio rastreado";
+  }
+  if (kind === "ENTRADA") {
+    return ENTRADA_LABEL[value as EntradaLead] ?? value;
   }
   if (kind === "CANAL") {
     // Grafia oficial dos canais conhecidos; o resto só ganha a inicial

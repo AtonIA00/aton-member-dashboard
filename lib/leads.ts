@@ -13,6 +13,7 @@ import {
   type Dimensions,
   type Filters,
 } from "./filters";
+import { getEntradaPorAnuncio } from "./meta-ads";
 import {
   buildAllCharts,
   buildMonthlyEvolution,
@@ -297,14 +298,36 @@ export async function getDashboardData(
   const currentLeadsAll = leadsInRange(base, range);
   const previousLeadsAll = prev ? leadsInRange(base, prev) : [];
 
+  // Porta de entrada do lead (formulário da Meta / formulário no WhatsApp /
+  // conversa direta). Vem do ANÚNCIO, não de coluna do lead, então precisa
+  // estar pronta ANTES de dimensões e filtros. Cache por anúncio de 6h: em
+  // regime não custa chamada; só anúncio novo. null = sem Meta vinculada, e
+  // aí o seletor nem aparece.
+  const idsAnuncio = [
+    ...new Set(
+      currentLeadsAll.map((l) => (l.id_anuncio ?? "").trim()).filter((s) => s !== ""),
+    ),
+  ];
+  const entradaPorAnuncio = idsAnuncio.length
+    ? await getEntradaPorAnuncio(workspaceId, idsAnuncio).catch((e) => {
+        console.error("[dashboard] entrada por anúncio falhou (seguindo sem o filtro)", {
+          workspaceId,
+          error: e instanceof Error ? e.message : String(e),
+        });
+        return null;
+      })
+    : null;
+
   // Dimensões e filtros derivam SEMPRE do recorte CURRENT (mais útil pra UI).
-  const dimensions = computeDimensions(currentLeadsAll);
+  const dimensions = computeDimensions(currentLeadsAll, entradaPorAnuncio);
   const filters = dropInvalidFilters(filtersIn, dimensions, workspaceId);
 
   // Aplica filtros aos DOIS recortes — comparativo é "mesma lente filtrada
   // em janelas temporais diferentes" (decisão M8).
-  const currentFiltered = applyFilters(currentLeadsAll, filters);
-  const previousFiltered = prev ? applyFilters(previousLeadsAll, filters) : [];
+  const currentFiltered = applyFilters(currentLeadsAll, filters, entradaPorAnuncio);
+  const previousFiltered = prev
+    ? applyFilters(previousLeadsAll, filters, entradaPorAnuncio)
+    : [];
 
   const kpis = computeKpis(currentFiltered);
   const kpisPrevious = prev ? computeKpis(previousFiltered) : null;

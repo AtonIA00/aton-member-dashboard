@@ -136,6 +136,24 @@ export function FilterBar({ dimensions, totalNoPeriodo }: Props) {
           minWidth="8.5rem"
         />
 
+        {/* Entrada — por qual porta o lead chegou. Só aparece quando há
+            conta Meta vinculada: sem ela a dimensão vem vazia. */}
+        {dimensions.entradas.length > 0 && (
+          <Select
+            label="Entrada"
+            value={filters.entrada ?? ""}
+            onChange={(v) => setFilter("entrada", v || undefined)}
+            options={[
+              { value: "", label: "Todas" },
+              ...dimensions.entradas.map((e) => ({
+                value: e,
+                label: labelFromValue(e, "ENTRADA"),
+              })),
+            ]}
+            minWidth="12.5rem"
+          />
+        )}
+
         {/* MQL — chips */}
         <ChipGroup
           label="MQL"

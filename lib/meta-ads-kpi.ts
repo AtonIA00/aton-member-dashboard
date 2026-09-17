@@ -182,3 +182,30 @@ export function duracaoStatus(seg: number | null): DuracaoStatus | null {
 /** Volume mínimo de reproduções pra taxa não ser ruído (abaixo disso a UI
  *  marca a linha como amostra baixa em vez de pintar heat). */
 export const VIDEO_MIN_PLAYS = 200;
+
+// ── Como o lead ENTRA na conversa ──────────────────────────────────────────
+// Três portas diferentes, e misturá-las esconde o que importa:
+//   formulario_meta  formulário instantâneo da Meta (destino ON_AD). O lead
+//                    preenche e NUNCA chega ao WhatsApp — o agente não fala
+//                    com essa pessoa. Medido na Emive: 47 leads pela Meta,
+//                    ZERO na base Aton.
+//   whatsapp_flow    clique-para-WhatsApp com formulário DENTRO do WhatsApp
+//                    (CTWA Flows) antes da conversa começar.
+//   whatsapp_direto  clique-para-WhatsApp sem formulário: a conversa começa
+//                    na primeira mensagem.
+// null = a Meta não diz (vídeo, perfil do Instagram, conjunto apagado) ou o
+// anúncio não é de captação. Nunca chutar: vira frase errada no relatório.
+export type EntradaLead = "formulario_meta" | "whatsapp_flow" | "whatsapp_direto";
+
+export const ENTRADA_LABEL: Record<EntradaLead, string> = {
+  formulario_meta: "Formulário da Meta",
+  whatsapp_flow: "Formulário no WhatsApp",
+  whatsapp_direto: "Conversa direta",
+};
+
+/** Ordem de exibição: da porta mais distante da conversa para a mais direta. */
+export const ENTRADA_ORDEM: EntradaLead[] = [
+  "formulario_meta",
+  "whatsapp_flow",
+  "whatsapp_direto",
+];

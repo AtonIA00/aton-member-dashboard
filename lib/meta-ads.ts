@@ -1,15 +1,23 @@
 import "server-only";
 import { getSupabaseAdmin } from "./supabase/server";
 import { isoDay, type DateRange } from "./period";
-import type { CreativeFormat, MetaAdTuple, MetaAdsForTable } from "./meta-ads-kpi";
+import type {
+  CreativeFormat,
+  EntradaLead,
+  MetaAdTuple,
+  MetaAdsForTable,
+} from "./meta-ads-kpi";
 
 // Tipos/metas client-safe vivem no meta-ads-kpi.ts (este arquivo é
 // server-only: componente cliente não pode importar valor daqui). Re-exporta
 // pra manter os imports existentes funcionando.
 export {
   adRow,
+  ENTRADA_LABEL,
+  ENTRADA_ORDEM,
   VIDEO_KPI,
   VIDEO_MIN_PLAYS,
+  type EntradaLead,
   type CreativeFormat,
   type MetaAdTuple,
   type MetaAdRow,
@@ -223,14 +231,33 @@ async function fetchJson(
  * chamada; chunks em PARALELO). Cosmético: falha degrada pra tabela sem
  * imagem — nunca derruba os dados de custo.
  */
-type CreativeMeta = { thumb: string | null; format: CreativeFormat; duracaoSeg: number | null };
+type CreativeMeta = {
+  thumb: string | null;
+  format: CreativeFormat;
+  duracaoSeg: number | null;
+  /** Conjunto do anúncio — é nele que mora o destination_type. */
+  adsetId: string | null;
+  /** O criativo abre um formulário DENTRO do WhatsApp (CTWA Flows)?
+   *  true/false quando há mensagem de boas-vindas configurada; null quando
+   *  não há (aí não dá pra afirmar nada). */
+  flow: boolean | null;
+};
+type StoryData = {
+  video_id?: string;
+  child_attachments?: unknown[];
+  /** JSON SERIALIZADO (string, não objeto) da mensagem de boas-vindas. */
+  page_welcome_message?: string;
+  call_to_action?: { type?: string; value?: { app_destination?: string } };
+};
 type CreativeNode = {
+  adset_id?: string;
   creative?: {
     thumbnail_url?: string;
     video_id?: string;
     object_story_spec?: {
-      video_data?: { video_id?: string };
-      link_data?: { child_attachments?: unknown[] };
+      video_data?: StoryData;
+      link_data?: StoryData;
+      photo_data?: StoryData;
     };
     asset_feed_spec?: { videos?: Array<{ video_id?: string }> };
   };
@@ -269,14 +296,101 @@ async function fetchVideoDurations(
   return out;
 }
 
+/**
+ * O criativo abre um formulário DENTRO do WhatsApp (CTWA Flows)?
+ *
+ * O sinal mora em object_story_spec.*.page_welcome_message, que vem como
+ * JSON SERIALIZADO (string). Validado nos criativos reais da Emive:
+ *   landing_screen_type: "ctwa_flows"
+ *   text_format.customer_action_type: "whatsapp_flow"
+ *   ...automated_greeting_message_cta.wa_flow.flow_data.flow_id
+ *
+ * null quando não há mensagem de boas-vindas configurada — aí não dá pra
+ * afirmar nem que tem nem que não tem formulário.
+ */
+function detectarFlow(pwm: string | undefined): boolean | null {
+  if (typeof pwm !== "string" || pwm === "") return null;
+  let j: Record<string, unknown>;
+  try {
+    j = JSON.parse(pwm) as Record<string, unknown>;
+  } catch {
+    // Boas-vindas ilegível: cai no texto cru em vez de mentir null.
+    return /ctwa_flows|whatsapp_flow|flow_id/.test(pwm);
+  }
+  if (j.landing_screen_type === "ctwa_flows") return true;
+  const midia = typeof j.media_type === "string" ? j.media_type : "text";
+  const fmt = (j[`${midia}_format`] ?? j.text_format) as
+    | { customer_action_type?: string }
+    | undefined;
+  if (fmt?.customer_action_type === "whatsapp_flow") return true;
+  return JSON.stringify(j).includes('"flow_id"');
+}
+
+/**
+ * Por qual porta o lead entra. Duas fontes, nenhuma inventada:
+ *   destination_type do CONJUNTO diz o destino (ON_AD = formulário
+ *   instantâneo da Meta, WHATSAPP = clique-para-WhatsApp);
+ *   a mensagem de boas-vindas do CRIATIVO separa, dentro do WhatsApp, quem
+ *   preenche formulário antes (flow) de quem cai direto na conversa.
+ *
+ * null de propósito em ON_VIDEO, INSTAGRAM_PROFILE, MESSENGER, UNDEFINED e
+ * conjunto não encontrado: não são portas de captação, ou a Meta não disse.
+ * Medido na carteira em 17/09/2026: 57 formulário Meta, 89 conversa direta,
+ * 7 flow, 40 sem classificação.
+ */
+function classificarEntrada(
+  destinationType: string | null,
+  creative: CreativeMeta | undefined,
+): EntradaLead | null {
+  if (destinationType === "ON_AD") return "formulario_meta";
+  if (destinationType === "WHATSAPP") {
+    return creative?.flow === true ? "whatsapp_flow" : "whatsapp_direto";
+  }
+  return null;
+}
+
+/** destination_type dos conjuntos (lotes de 50, tolerante: lote que falha
+ *  vira desconhecido em vez de derrubar a classificação inteira). */
+async function fetchDestinationTypes(
+  adsetIds: string[],
+  token: string,
+): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  const chunks: string[][] = [];
+  for (let i = 0; i < adsetIds.length; i += 50) chunks.push(adsetIds.slice(i, i + 50));
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      fetchJson(
+        `https://graph.facebook.com/v21.0/?ids=${chunk.join(",")}` +
+          `&fields=destination_type&access_token=${encodeURIComponent(token)}`,
+        true,
+      ),
+    ),
+  );
+  for (const json of results) {
+    if (!json || json.error) continue;
+    for (const [id, v] of Object.entries(json as Record<string, { destination_type?: string }>)) {
+      out.set(id, v?.destination_type ?? null);
+    }
+  }
+  return out;
+}
+
 async function fetchCreativeThumbs(
   adIds: string[],
   token: string,
 ): Promise<Map<string, CreativeMeta>> {
   const out = new Map<string, CreativeMeta>();
+  // adset_id e a mensagem de boas-vindas entram NA MESMA chamada que já
+  // buscava a miniatura — classificar a entrada do lead não custa request
+  // novo. A string foi validada contra a API antes de entrar: campo aninhado
+  // errado derruba a chamada inteira e levaria as miniaturas junto.
   const fields =
-    "creative.thumbnail_width(256).thumbnail_height(256)" +
-    "{thumbnail_url,video_id,object_story_spec{video_data{video_id},link_data{child_attachments{link}}}," +
+    "adset_id,creative.thumbnail_width(256).thumbnail_height(256)" +
+    "{thumbnail_url,video_id,object_story_spec{" +
+    "video_data{video_id,page_welcome_message,call_to_action}," +
+    "link_data{child_attachments{link},page_welcome_message,call_to_action}," +
+    "photo_data{page_welcome_message,call_to_action}}," +
     "asset_feed_spec{videos{video_id}}}";
   const chunks: string[][] = [];
   for (let i = 0; i < adIds.length; i += 50) chunks.push(adIds.slice(i, i + 50));
@@ -302,10 +416,17 @@ async function fetchCreativeThumbs(
         null;
       const isCarousel = (c.object_story_spec?.link_data?.child_attachments?.length ?? 0) >= 2;
       if (videoId) videoDoAd.set(id, String(videoId));
+      const story =
+        c.object_story_spec?.link_data ??
+        c.object_story_spec?.video_data ??
+        c.object_story_spec?.photo_data ??
+        null;
       out.set(id, {
         thumb: c.thumbnail_url ?? null,
         format: videoId ? "video" : isCarousel ? "carousel" : "image",
         duracaoSeg: null,
+        adsetId: v?.adset_id ? String(v.adset_id) : null,
+        flow: detectarFlow(story?.page_welcome_message),
       });
     }
   }
@@ -506,6 +627,72 @@ export async function getMetaAdsForWorkspace(
   return data;
 }
 
+// ── Porta de entrada por anúncio (cache por ANÚNCIO, 6h) ───────────────────
+// Alimenta o filtro "Entrada" do dash. O cache é por anúncio, não por
+// requisição: entrada é CONFIGURAÇÃO do anúncio (destino do conjunto +
+// mensagem de boas-vindas), não métrica — não muda com o período nem com o
+// dia. Em regime o dash não faz chamada nenhuma aqui; só anúncio novo custa.
+const entradaCache = new Map<string, { ts: number; entrada: EntradaLead | null }>();
+const ENTRADA_TTL = 6 * 60 * 60_000;
+
+/**
+ * Mapa id_anuncio → porta de entrada, pros anúncios pedidos.
+ * null (o retorno inteiro) = sem conta Meta / flag off / sem token: o dash
+ * simplesmente não oferece o filtro. Anúncio que a Meta não classifica vem
+ * com valor null DENTRO do mapa — é diferente de não saber quem ele é.
+ */
+export async function getEntradaPorAnuncio(
+  workspaceId: string,
+  adIds: string[],
+): Promise<Map<string, EntradaLead | null> | null> {
+  if (!isMetaAdsEnabled()) return null;
+  const token = process.env.META_SYSTEM_USER_TOKEN;
+  if (!token) return null;
+
+  const ids = [...new Set(adIds.map((s) => s.trim()).filter((s) => /^\d{5,25}$/.test(s)))];
+  if (ids.length === 0) return null;
+
+  const account = await getAccountForWorkspace(workspaceId);
+  if (!account) return null;
+
+  const agora = Date.now();
+  const out = new Map<string, EntradaLead | null>();
+  const faltando: string[] = [];
+  for (const id of ids) {
+    const hit = entradaCache.get(id);
+    if (hit && agora - hit.ts < ENTRADA_TTL) out.set(id, hit.entrada);
+    else faltando.push(id);
+  }
+  if (faltando.length === 0) return out;
+
+  try {
+    // Mesma chamada que já traz miniatura/formato: devolve adset_id e a
+    // mensagem de boas-vindas de quebra.
+    const criativos = await fetchCreativeThumbs(faltando, token);
+    const adsets = [...new Set([...criativos.values()].map((c) => c.adsetId).filter(Boolean))];
+    const destinos = adsets.length
+      ? await fetchDestinationTypes(adsets as string[], token)
+      : new Map<string, string | null>();
+
+    for (const id of faltando) {
+      const c = criativos.get(id);
+      const dest = c?.adsetId ? destinos.get(c.adsetId) ?? null : null;
+      const entrada = classificarEntrada(dest, c);
+      entradaCache.set(id, { ts: agora, entrada });
+      out.set(id, entrada);
+    }
+  } catch (e) {
+    // Degrada: devolve o que já tinha em cache. Filtro some ou fica parcial,
+    // o dash não cai.
+    console.error("[meta-ads] entrada por anúncio falhou", {
+      workspaceId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    if (out.size === 0) return null;
+  }
+  return out;
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // Canal interno pro Aton Core (motor de saúde do assinante / relatório gpt).
 //
@@ -567,6 +754,14 @@ export type CoreAdInsight = {
   video_ret_hook: number | null;
   /** video_p75 ÷ video_plays (%). Meta: >2% (p25 real da carteira: 1,9%). */
   video_ret_body: number | null;
+  /** Por qual porta o lead entra — ver EntradaLead em meta-ads-kpi.ts.
+   *  null = a Meta não permite afirmar (vídeo, perfil, conjunto apagado) ou
+   *  o anúncio não é de captação. Nunca chutar: vira frase no relatório. */
+  entrada: EntradaLead | null;
+  /** Valor CRU do destination_type do conjunto — ON_AD, WHATSAPP, ON_VIDEO,
+   *  INSTAGRAM_PROFILE, MESSENGER, UNDEFINED… Vai junto com o traduzido de
+   *  propósito: valor novo da Meta aparece aqui sem depender de deploy. */
+  destination_type: string | null;
   /** Miniatura 256px do criativo (mesma que o dash mostra) — o Pulso do Core
    *  a exibe nas telas de criativos/retenção pra o assinante reconhecer a
    *  peça de bater o olho. null quando a Meta não devolve (best-effort). */
@@ -783,6 +978,8 @@ export async function getMetaInsightsForCore(
         video_ret_body: plays > 0 ? round2c((p75 / plays) * 100) : null,
         thumbnail_url: null,
         por_plataforma: null,
+        entrada: null,
+        destination_type: null,
       });
     }
     url = (json.paging as { next?: string } | undefined)?.next ?? null;
@@ -810,18 +1007,20 @@ export async function getMetaInsightsForCore(
     fetchAllPages(`${base}/campaigns?fields=id,name,daily_budget,lifetime_budget&limit=500&${tokenParam}`),
     fetchAllPages(
       `${base}/adsets?fields=id,name,campaign_id,daily_budget,lifetime_budget,` +
-        `targeting{publisher_platforms}&limit=500&${tokenParam}`,
+        `destination_type,targeting{publisher_platforms}&limit=500&${tokenParam}`,
     ),
   ]);
 
   // Miniaturas (best-effort, mesmo buscador do dash): falha vira null — a
   // tabela do Pulso degrada pro placeholder, nunca derruba o dado de custo.
+  // A mesma chamada traz miniatura E o sinal de formulário-no-WhatsApp.
+  let criativos = new Map<string, CreativeMeta>();
   if (porAnuncio.length) {
     try {
-      const thumbs = await fetchCreativeThumbs(porAnuncio.map((a) => a.ad_id), token);
-      for (const a of porAnuncio) a.thumbnail_url = thumbs.get(a.ad_id)?.thumb ?? null;
+      criativos = await fetchCreativeThumbs(porAnuncio.map((a) => a.ad_id), token);
+      for (const a of porAnuncio) a.thumbnail_url = criativos.get(a.ad_id)?.thumb ?? null;
     } catch {
-      /* cosmético — segue sem thumb */
+      /* cosmético — segue sem thumb nem classificação de entrada */
     }
   }
 
@@ -869,6 +1068,7 @@ export async function getMetaInsightsForCore(
       name: (c.name as string) ?? null,
     });
   }
+  const destinoConjunto = new Map<string, string | null>();
   const orcConjunto = new Map<
     string,
     { daily: number | null; lifetime: number | null; platforms: string[] | null }
@@ -885,6 +1085,16 @@ export async function getMetaInsightsForCore(
       lifetime: budgetToMajor(s.lifetime_budget),
       platforms: plats,
     });
+    destinoConjunto.set(id, (s.destination_type as string) ?? null);
+  }
+
+  // Entrada do lead: destino do conjunto + mensagem de boas-vindas do
+  // criativo. Conjunto que a Meta não devolveu (apagado) fica null nos dois
+  // campos — "não sei", que o Core trata diferente de "não tem".
+  for (const a of porAnuncio) {
+    const dest = a.adset_id ? destinoConjunto.get(a.adset_id) ?? null : null;
+    a.destination_type = dest;
+    a.entrada = classificarEntrada(dest, criativos.get(a.ad_id));
   }
 
   const campMap = new Map<string, CoreCampaign>();
