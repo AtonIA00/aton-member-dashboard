@@ -641,6 +641,12 @@ const ENTRADA_TTL = 6 * 60 * 60_000;
  * simplesmente não oferece o filtro. Anúncio que a Meta não classifica vem
  * com valor null DENTRO do mapa — é diferente de não saber quem ele é.
  */
+// Orçamento desta busca. Diferente da camada de custo, que renderiza depois,
+// esta roda ANTES de dimensões e filtros — ou seja, no caminho crítico da
+// página. Meta lenta não pode pendurar o dash: estourou, devolve o que já
+// está em cache (ou null) e o seletor some nesse render.
+const ENTRADA_DEADLINE_MS = 4_000;
+
 export async function getEntradaPorAnuncio(
   workspaceId: string,
   adIds: string[],
@@ -666,20 +672,37 @@ export async function getEntradaPorAnuncio(
   if (faltando.length === 0) return out;
 
   try {
-    // Mesma chamada que já traz miniatura/formato: devolve adset_id e a
-    // mensagem de boas-vindas de quebra.
-    const criativos = await fetchCreativeThumbs(faltando, token);
-    const adsets = [...new Set([...criativos.values()].map((c) => c.adsetId).filter(Boolean))];
-    const destinos = adsets.length
-      ? await fetchDestinationTypes(adsets as string[], token)
-      : new Map<string, string | null>();
+    const buscar = (async () => {
+      // Mesma chamada que já traz miniatura/formato: devolve adset_id e a
+      // mensagem de boas-vindas de quebra.
+      const criativos = await fetchCreativeThumbs(faltando, token);
+      const adsets = [...new Set([...criativos.values()].map((c) => c.adsetId).filter(Boolean))];
+      const destinos = adsets.length
+        ? await fetchDestinationTypes(adsets as string[], token)
+        : new Map<string, string | null>();
 
-    for (const id of faltando) {
-      const c = criativos.get(id);
-      const dest = c?.adsetId ? destinos.get(c.adsetId) ?? null : null;
-      const entrada = classificarEntrada(dest, c);
-      entradaCache.set(id, { ts: agora, entrada });
-      out.set(id, entrada);
+      for (const id of faltando) {
+        const c = criativos.get(id);
+        const dest = c?.adsetId ? destinos.get(c.adsetId) ?? null : null;
+        const entrada = classificarEntrada(dest, c);
+        entradaCache.set(id, { ts: agora, entrada });
+        out.set(id, entrada);
+      }
+      return true;
+    })();
+
+    const noPrazo = await Promise.race([
+      buscar,
+      new Promise<false>((r) => setTimeout(() => r(false), ENTRADA_DEADLINE_MS)),
+    ]);
+    if (!noPrazo) {
+      // A promise segue rodando e ainda popula o cache pro próximo render —
+      // só não seguramos a página esperando por ela.
+      console.warn("[meta-ads] entrada por anúncio estourou o prazo", {
+        workspaceId,
+        faltando: faltando.length,
+      });
+      return out.size > 0 ? out : null;
     }
   } catch (e) {
     // Degrada: devolve o que já tinha em cache. Filtro some ou fica parcial,
