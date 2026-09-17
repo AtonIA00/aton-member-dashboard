@@ -84,7 +84,14 @@ export type MetaAdsData = {
 };
 
 // ── Mapeamento workspace → conta (cache 10min) ─────────────────────────────
-type AccountRow = { act_id: string; account_name: string | null };
+type AccountRow = {
+  act_id: string;
+  account_name: string | null;
+  /** Campanhas que NÃO são do funil Aton deste assinante — só existe em
+   *  conta COMPARTILHADA (o dono roda outros produtos na mesma conta).
+   *  null/vazio = padrão: o investimento é o da conta inteira. */
+  campanhas_excluidas: string[] | null;
+};
 const accountCache = new Map<string, { ts: number; row: AccountRow | null }>();
 const ACCOUNT_TTL = 10 * 60_000;
 
@@ -96,7 +103,7 @@ async function getAccountForWorkspace(workspaceId: string): Promise<AccountRow |
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("wa_meta_ads_accounts")
-    .select("act_id, account_name")
+    .select("act_id, account_name, campanhas_excluidas")
     .eq("uchat_workspace_id", workspaceId)
     .eq("enabled", true)
     .maybeSingle<AccountRow>();
@@ -145,6 +152,11 @@ async function getBaseStartForWorkspace(workspaceId: string): Promise<string | n
   baseStartCache.set(workspaceId, { ts: now, day });
   return day;
 }
+
+/** Normaliza pra casar exclusão: sem espaço nas pontas, minúsculo. O item
+ *  cadastrado casa por campaign_id OU por campaign_name — quem cadastra vê
+ *  nomes na tela da Meta, mas o id é estável se renomearem. */
+const chaveCampanha = (v: string | null | undefined) => (v ?? "").trim().toLowerCase();
 
 // ── Insights (cache 15min por act+range+ids; negativo 2min) ────────────────
 const insightsCache = new Map<string, { ts: number; data: MetaAdsData }>();
@@ -351,7 +363,9 @@ export async function getMetaAdsForWorkspace(
 
   // Chave de cache = janela EFETIVA (o "Todo período" resolvido muda de dia).
   const rangeKey = `${since ?? "max"}|${until ?? "max"}`;
-  const cacheKey = `${account.act_id}|${rangeKey}|${ids.slice().sort().join(",")}`;
+  const cacheKey =
+    `${account.act_id}|${rangeKey}|${ids.slice().sort().join(",")}` +
+    `|x:${(account.campanhas_excluidas ?? []).slice().sort().join("~")}`;
   const now = Date.now();
   const hit = insightsCache.get(cacheKey);
   if (hit && now - hit.ts < INSIGHTS_TTL) return hit.data;
@@ -361,12 +375,26 @@ export async function getMetaAdsForWorkspace(
   const G = "https://graph.facebook.com/v21.0";
   const tokenParam = `access_token=${encodeURIComponent(token)}`;
 
+  // Conta COMPARTILHADA: quando há campanha excluída, os totais do strip não
+  // podem vir de level=account (que soma a conta inteira, inclusive o que não
+  // é do funil deste assinante). Aí a mesma informação vem de level=campaign e
+  // somamos só o que ficou. Uma chamada, mesmo custo.
+  // Sem exclusão — 14 das 15 contas hoje — o caminho é EXATAMENTE o de antes.
+  const excluidas = new Set((account.campanhas_excluidas ?? []).map(chaveCampanha).filter(Boolean));
+  const temExclusao = excluidas.size > 0;
+
   const work = (async (): Promise<MetaAdsData | null> => {
-    // (a) totais da conta — strip custo × desfecho.
-    const accountP = fetchJson(
-      `${G}/${account.act_id}/insights?level=account&${rangeParam}` +
-        `&fields=spend,impressions,inline_link_clicks,account_currency&${tokenParam}`,
-    );
+    // (a) totais do strip custo × desfecho.
+    const accountP = temExclusao
+      ? fetchJson(
+          `${G}/${account.act_id}/insights?level=campaign&${rangeParam}` +
+            `&fields=campaign_id,campaign_name,spend,impressions,inline_link_clicks,` +
+            `account_currency&limit=500&${tokenParam}`,
+        )
+      : fetchJson(
+          `${G}/${account.act_id}/insights?level=account&${rangeParam}` +
+            `&fields=spend,impressions,inline_link_clicks,account_currency&${tokenParam}`,
+        );
 
     // (b) insights só dos ads relevantes (chunks de 80 no IN, em paralelo).
     const adChunks: string[][] = [];
@@ -394,7 +422,36 @@ export async function getMetaAdsForWorkspace(
     const [accountJson, adsJsons, thumbs] = await Promise.all([accountP, adsP, thumbsP]);
     if (!accountJson) return null;
 
-    const acc = (accountJson.data as Array<Record<string, unknown>> | undefined)?.[0] ?? {};
+    const linhasTotais = (accountJson.data as Array<Record<string, unknown>> | undefined) ?? [];
+    // Sem exclusão a resposta tem uma linha só (a conta). Com exclusão são as
+    // campanhas — descarta as excluídas e soma o resto.
+    const linhasValidas = temExclusao
+      ? linhasTotais.filter(
+          (r) =>
+            !excluidas.has(chaveCampanha(r.campaign_id as string)) &&
+            !excluidas.has(chaveCampanha(r.campaign_name as string)),
+        )
+      : linhasTotais;
+    const somaTotais = linhasValidas.reduce<{ spend: number; impressions: number; linkClicks: number }>(
+      (s, r) => ({
+        spend: s.spend + num(r.spend),
+        impressions: s.impressions + num(r.impressions),
+        linkClicks: s.linkClicks + num(r.inline_link_clicks),
+      }),
+      { spend: 0, impressions: 0, linkClicks: 0 },
+    );
+    if (temExclusao) {
+      const cortadas = linhasTotais.length - linhasValidas.length;
+      if (cortadas === 0) {
+        // Cadastro provavelmente errado (nome mudou na Meta, id trocado) —
+        // silenciar viraria um CPL errado sem ninguém perceber.
+        console.warn("[meta-ads] exclusão de campanha não casou com nada", {
+          actId: account.act_id,
+          cadastradas: [...excluidas],
+        });
+      }
+    }
+    const acc = linhasTotais[0] ?? {};
     let currency = (acc.account_currency as string) || "BRL";
 
     const byAdId = new Map<string, MetaAdInsight>();
@@ -430,9 +487,9 @@ export async function getMetaAdsForWorkspace(
       accountName: account.account_name,
       currency,
       byAdId,
-      totalSpend: num(acc.spend),
-      totalImpressions: num(acc.impressions),
-      totalLinkClicks: num(acc.inline_link_clicks),
+      totalSpend: somaTotais.spend,
+      totalImpressions: somaTotais.impressions,
+      totalLinkClicks: somaTotais.linkClicks,
     };
   })();
 
