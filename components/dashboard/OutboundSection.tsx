@@ -3,8 +3,14 @@ import type { OutboundData } from "@/lib/outbound";
 // Funil de DISPARO ATIVO. Aparece só pra quem tem disparo — assinante de
 // inbound não vê nada disto.
 //
+// "Avançaram" é o campo `convertido` da tabela, marcado pelo fluxo de
+// atendimento em TRÊS rotas — agendado, falar humano, material avançado — sem
+// registrar qual. Não é "começou a conversa" (isso é responder): é o
+// atendimento chegando a um desfecho. Dos 4 do lote real de 17/09, 3 viraram
+// visita agendada.
+//
 // A ordem das peças é a ordem em que a operação perde gente:
-//   base → conseguiu entregar → alguém respondeu → virou conversa
+//   base → conseguiu entregar → alguém respondeu → o atendimento avançou
 // A falha de envio vem PRIMEIRO e destacada porque é a única perda que não é
 // desempenho de mensagem: é defeito operacional, e some se ninguém olhar
 // (na Lavvi em 18/09: 162 de 602, 27% da base).
@@ -56,7 +62,7 @@ export function OutboundSection({ data }: { data: OutboundData }) {
               destaque
             />
             <Card
-              label="Viraram conversa"
+              label="Avançaram"
               value={int(converteram)}
               sub={`${pct(data.pctConversaoResp)} de quem respondeu`}
               destaque
@@ -180,18 +186,26 @@ export function OutboundSection({ data }: { data: OutboundData }) {
           </div>
 
           <div className="border-t border-[color:var(--border)] px-6 py-2 text-[10px] leading-relaxed text-[color:var(--muted-foreground)]/70">
-            Taxa de resposta e de conversa são sempre sobre os{" "}
-            <strong className="font-semibold">entregues</strong>, nunca sobre a base — dividir pelo
-            total faria uma falha de envio parecer mensagem ruim.
+            <strong className="font-semibold">Responderam</strong> = respondeu a pelo menos uma
+            mensagem do disparo (conta só a primeira resposta).{" "}
+            <strong className="font-semibold">Avançaram</strong> = o atendimento chegou a um
+            desfecho: agendou visita, pediu para falar com um humano, ou recebeu material avançado.
+            A marcação é a mesma nos três casos, então este número não separa qual deles foi.
+            Não confunda com o <strong className="font-semibold">Convertido</strong> do funil abaixo:
+            aquele conta leads pela etapa no CRM, este conta contatos do disparo — bases e
+            denominadores diferentes.
+            <br />
+            As taxas são sempre sobre os <strong className="font-semibold">entregues</strong>, nunca
+            sobre a base — dividir pelo total faria uma falha de envio parecer mensagem ruim.
             {data.convertidoSemResposta > 0 && (
               <>
                 {" "}
                 {int(data.convertidoSemResposta)}{" "}
                 {data.convertidoSemResposta === 1
-                  ? "contato aparece como conversa sem ter resposta registrada"
-                  : "contatos aparecem como conversa sem ter resposta registrada"}
-                : a marcação de conversa e a de resposta são gravadas por caminhos diferentes, então
-                um pode existir sem o outro.
+                  ? "contato avançou sem ter resposta registrada"
+                  : "contatos avançaram sem ter resposta registrada"}
+                : as duas marcações são gravadas por caminhos diferentes, então uma pode existir sem
+                a outra.
               </>
             )}
           </div>
