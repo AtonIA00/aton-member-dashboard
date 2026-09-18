@@ -7,6 +7,8 @@ import { KpiRow } from "./KpiRow";
 import { Funnel } from "./Funnel";
 import { AdsPerformanceTable } from "./AdsPerformanceTable";
 import { VideoRetentionTable } from "./VideoRetentionTable";
+import { OutboundSection } from "./OutboundSection";
+import { getOutboundData, type OutboundData } from "@/lib/outbound";
 import { LeadsTable } from "./LeadsTable";
 import { PeriodPicker } from "./PeriodPicker";
 import { TierBadge } from "./TierBadge";
@@ -112,6 +114,19 @@ export async function Dashboard({
         throw wrapped;
       });
 
+  // Disparo ativo — NÃO depende dos leads (a tabela é outra), então corre em
+  // paralelo com o agregado. null quando o workspace nunca disparou: a seção
+  // não existe pro assinante de inbound, sem ruído visual nem custo.
+  const outboundPromise: Promise<OutboundData | null> = isTonTab
+    ? Promise.resolve(null)
+    : getOutboundData(workspaceId, resolvePeriod(periodKey, customFrom, customTo)).catch((e) => {
+        console.error("[dashboard] outbound falhou (seguindo sem a seção)", {
+          workspaceId,
+          error: e instanceof Error ? e.message : String(e),
+        });
+        return null;
+      });
+
   // Meta Ads (custo × desfecho) — encadeado no agregado de leads porque o
   // fetch é FILTRADO pelos id_anuncio que têm leads na base (3 chamadas
   // pequenas em paralelo em vez de varrer a conta inteira — a Brows tem 487
@@ -204,6 +219,7 @@ export async function Dashboard({
             <DashboardContent
               data={await dashboardDataPromise}
               metaAds={await metaAdsPromise}
+              outbound={await outboundPromise}
               workspaceName={workspaceName}
               periodKey={periodKey}
               customFrom={customFrom}
@@ -230,6 +246,8 @@ export async function Dashboard({
 type DashboardContentProps = {
   data: Awaited<ReturnType<typeof getDashboardData>>;
   metaAds: MetaAdsForTable | null;
+  /** null = assinante não faz disparo ativo; a seção não existe pra ele. */
+  outbound: OutboundData | null;
   workspaceName: string;
   periodKey: PeriodKey;
   customFrom?: string;
@@ -244,6 +262,7 @@ type DashboardContentProps = {
 function DashboardContent({
   data,
   metaAds,
+  outbound,
   workspaceName,
   periodKey,
   customFrom,
@@ -288,6 +307,16 @@ function DashboardContent({
         initialVisible={retornoComercialVisible}
         hmac={hmac}
       />
+
+      {/* Disparo ativo — o topo do funil outbound, antes de virar conversa.
+          Fora do ternário de período vazio de propósito: pode haver disparo
+          num período sem nenhum lead no CRM, e é exatamente aí que este
+          número importa. */}
+      {outbound && (
+        <div className="mt-8">
+          <OutboundSection data={outbound} />
+        </div>
+      )}
 
       {data.totalNoPeriodo === 0 ? (
         <EmptyState
