@@ -201,12 +201,12 @@ export function KpiRow({ kpis, kpisPrevious, deltas }: Props) {
             {c.label}
           </div>
           {c.sub && (
-            <div className="mt-1.5 truncate text-[11px] text-[color:var(--muted-foreground)]/80">
+            <div className="mt-1.5 text-[11px] leading-tight text-[color:var(--muted-foreground)]/80">
               {c.sub}
             </div>
           )}
           {c.sub2 && (
-            <div className="mt-0.5 truncate text-[11px] text-[color:var(--muted-foreground)]/70">
+            <div className="mt-1 text-[11px] leading-tight text-[color:var(--muted-foreground)]/70">
               {c.sub2}
             </div>
           )}
@@ -222,10 +222,13 @@ export function KpiRow({ kpis, kpisPrevious, deltas }: Props) {
                 return (
                   <div
                     title={FAIXA_TITULO[faixa]}
-                    className={`mt-1.5 flex cursor-help items-center gap-1.5 text-[10px] leading-tight ${estilo.text}`}
+                    className={`mt-2 flex cursor-help items-start gap-1.5 text-[10px] leading-tight ${estilo.text}`}
                   >
-                    <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${estilo.dot}`} />
-                    <span className="truncate">{textoDaMeta(c.meta)}</span>
+                    <span
+                      aria-hidden
+                      className={`mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full ${estilo.dot}`}
+                    />
+                    <span>{textoDaMeta(c.meta)}</span>
                   </div>
                 );
               })()
@@ -250,7 +253,7 @@ export function KpiRow({ kpis, kpisPrevious, deltas }: Props) {
                 {c.delta.formatted}
               </div>
               {c.delta.direction !== "new" && (
-                <div className="mt-1 truncate text-[11px] text-[color:var(--muted-foreground)]/70">
+                <div className="mt-1 text-[11px] leading-tight text-[color:var(--muted-foreground)]/70">
                   {c.valuePrevious} no período anterior
                 </div>
               )}
