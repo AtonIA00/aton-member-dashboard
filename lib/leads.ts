@@ -51,9 +51,19 @@ export type Kpis = {
    *  sem `mql` preenchido contam como não-MQL. Logo a taxa é um PISO — pode
    *  subir se a classificação for completada. Ver mqlSemClassificacao. */
   mqlRate: number;
-  /** Leads com `mql` vazio/null no recorte. ~54% da base (2026-07, crônico:
-   *  47-62%/mês desde jan). Exposto na UI pro leitor saber se a mqlRate é
-   *  confiável (8% sem classificação) ou quase ficção (94% sem). */
+  /** MQL "sim" ENTRE QUEM INTERAGIU (exclui quem ficou em "Novo Lead").
+   *  Mede coisa diferente da mqlRate: aproveitamento da conversa, não do
+   *  tráfego. Quem nunca respondeu é problema de criativo e de canal; quem
+   *  respondeu e não chegou a qualificado é problema de abordagem. Este é o
+   *  número que o assinante consegue agir em cima, por isso virou o valor
+   *  em destaque do card. */
+  mqlSimInteragiram: number;
+  /** mqlSimInteragiram / interagiram. */
+  mqlRateInteragiram: number;
+  /** Leads com `mql` vazio/null no recorte. Era crônico (47-62%/mês até
+   *  jul/2026) até o cron do SOL passar a preencher o que a AI task da UChat
+   *  deixava em branco. Segue exposto na UI porque assinante novo ainda pode
+   *  entrar com a classificação atrasada, e aí a mqlRate vira piso, não taxa. */
   mqlSemClassificacao: number;
   agendadoPlus: number;
   pctAgendamento: number;
@@ -87,6 +97,10 @@ export type Deltas = {
   total: Delta;
   pctInteracao: Delta;
   mqlRate: Delta;
+  /** Delta do valor em destaque do card de MQL. Separado do mqlRate: os dois
+   *  aparecem no mesmo card e podem andar em direções opostas (o total sobe
+   *  porque entrou mais lead, o aproveitamento cai). */
+  mqlRateInteragiram: Delta;
   agendadoPlus: Delta;
   anunciosAtivos: Delta;
   campanhasAtivas: Delta;
@@ -345,6 +359,11 @@ export async function getDashboardData(
           kind: "percent",
           orientation: "higher_is_better",
         }),
+        mqlRateInteragiram: computeDelta(
+          kpis.mqlRateInteragiram,
+          kpisPrevious.mqlRateInteragiram,
+          { kind: "percent", orientation: "higher_is_better" },
+        ),
         agendadoPlus: computeDelta(kpis.agendadoPlus, kpisPrevious.agendadoPlus, {
           kind: "count",
           orientation: "higher_is_better",
@@ -396,6 +415,7 @@ export function computeKpis(leads: LeadRow[]): Kpis {
   const total = leads.length;
   let novos = 0;
   let mqlSim = 0;
+  let mqlSimInteragiram = 0;
   let mqlSemClassificacao = 0;
   let agendadoPlus = 0;
   const anuncios = new Set<string>();
@@ -407,7 +427,13 @@ export function computeKpis(leads: LeadRow[]): Kpis {
     if (g === "Agendado+") agendadoPlus++;
     const mqlRaw = (l.mql ?? "").trim();
     if (mqlRaw === "") mqlSemClassificacao++;
-    if (mqlRaw.toLowerCase() === "sim") mqlSim++;
+    if (mqlRaw.toLowerCase() === "sim") {
+      mqlSim++;
+      // Contado à parte, e não como mqlSim/interagiram na divisão, porque
+      // existe lead com mql="sim" que nunca saiu de "Novo Lead" no funil.
+      // Dividir o mqlSim cheio pelos que interagiram passaria de 100%.
+      if (g !== "Novo") mqlSimInteragiram++;
+    }
     if (l.id_anuncio && l.id_anuncio.trim()) anuncios.add(l.id_anuncio.trim());
     if (l.nome_campanha && l.nome_campanha.trim()) campanhas.add(l.nome_campanha.trim());
   }
@@ -421,6 +447,8 @@ export function computeKpis(leads: LeadRow[]): Kpis {
     pctInteracao: safeDiv(interagiram, total),
     mqlSim,
     mqlRate: safeDiv(mqlSim, total),
+    mqlSimInteragiram,
+    mqlRateInteragiram: safeDiv(mqlSimInteragiram, interagiram),
     mqlSemClassificacao,
     agendadoPlus,
     pctAgendamento: safeDiv(agendadoPlus, total),
