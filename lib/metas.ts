@@ -48,22 +48,26 @@ export type Meta = {
   minima: number;
   /** Onde estão os melhores da carteira. */
   ideal: number;
+  /** Fim da escala da régua da faixa de KPIs: o preenchimento é valor ÷ teto.
+   *  Não é meta. Existe para o ideal cair num ponto legível da barra; valor
+   *  acima do teto enche a barra e para. */
+  teto: number;
 };
 
 export const METAS = {
-  interacao: { piso: 50, minima: 65, ideal: 75 },
+  interacao: { piso: 50, minima: 65, ideal: 75, teto: 100 },
   /** Aproveitamento da conversa. Métrica nova em 22/09/2026, sem histórico
    *  anterior de faixa de cor, calibrada direto pela medição da carteira:
    *  mediana 35, p75 52. */
-  mqlInteragiram: { piso: 20, minima: 35, ideal: 50 },
+  mqlInteragiram: { piso: 20, minima: 35, ideal: 50, teto: 70 },
   /** ATENÇÃO: mais permissiva que a mediana medida (26%). Estes três valores
    *  são a calibração por quartis da tabela de anúncios, que já estava no ar,
    *  e hoje NÃO aparecem como meta em card nenhum (o card de MQL destaca o
    *  aproveitamento da conversa). Mexer aqui repinta a tabela de anúncios de
    *  todos os assinantes, então fica como está até alguém decidir isso de
    *  propósito. */
-  mqlTotal: { piso: 10, minima: 20, ideal: 30 },
-  conversao: { piso: 4, minima: 9, ideal: 15 },
+  mqlTotal: { piso: 10, minima: 20, ideal: 30, teto: 60 },
+  conversao: { piso: 4, minima: 9, ideal: 15, teto: 22 },
 } as const satisfies Record<string, Meta>;
 
 /** Volume abaixo do qual percentual não significa nada e a meta é escondida.

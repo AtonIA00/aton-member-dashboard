@@ -164,3 +164,36 @@ html {
   }
   /* option styling segue o tema via tokens (não mais hardcoded). */
 }
+
+
+/* ── Detalhes ─────────────────────────────────────────────────────────────
+   Notas de apoio (rodapés, avisos de qualidade do dado, definições, variação
+   contra o período anterior) só aparecem com "Detalhes" ligado. Escondidas
+   por CSS, não por React: funciona igual em componente de servidor e de
+   cliente, e não pisca na hidratação. O padrão é "off" (tela limpa). */
+[data-detalhes="off"] [data-detalhe] {
+  display: none !important;
+}
+
+/* ── Faixa de KPIs (guia de estilo do José) ───────────────────────────────
+   Um número por coluna, uma régua por meta. Cor como sinal: o azul só
+   aparece quando a métrica bateu o ideal; abaixo disso, verde-acinzentado.
+   Sem vermelho: abaixo do mínimo se comunica pela distância até a marca. */
+.kpi-strip {
+  --kpi-ideal-fill: var(--aton-blue);
+  --kpi-abaixo-fill: #79a69c;
+  --kpi-marca-min: #79a69c;
+  --kpi-marca-ideal: #062f28;
+  --kpi-trilho: #f2f2f5;
+  --kpi-divisor: #e7e7f1;
+  --kpi-numero: #062f28;
+  --kpi-secundario: #6b6b6b;
+}
+
+[data-theme="dark"] .kpi-strip {
+  --kpi-marca-ideal: var(--foreground);
+  --kpi-trilho: rgba(255, 255, 255, 0.08);
+  --kpi-divisor: var(--border);
+  --kpi-numero: var(--foreground);
+  --kpi-secundario: var(--muted-foreground);
+}

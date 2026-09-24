@@ -23,6 +23,8 @@ import type { TabKey } from "@/lib/tabs";
 import { TonView } from "@/components/ton/TonView";
 import { AtonLogo } from "@/components/brand/AtonLogo";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { DetalhesToggle, DETALHES_ROOT_ID } from "@/components/DetalhesToggle";
+import { getMostrarDetalhes } from "@/lib/preferences";
 import { RetornoComercialSection } from "./RetornoComercialSection";
 import { getMetaAdsForWorkspace, toTablePayload, type MetaAdsForTable } from "@/lib/meta-ads";
 
@@ -114,6 +116,10 @@ export async function Dashboard({
         throw wrapped;
       });
 
+  // Preferência "Detalhes" do usuário (notas de apoio visíveis ou não).
+  // Lida no servidor pra página nascer no estado certo, sem piscar.
+  const mostrarDetalhes = await getMostrarDetalhes(workspaceId, hmac.user_id);
+
   // Disparo ativo — NÃO depende dos leads (a tabela é outra), então corre em
   // paralelo com o agregado. null quando o workspace nunca disparou: a seção
   // não existe pro assinante de inbound, sem ruído visual nem custo.
@@ -153,7 +159,11 @@ export async function Dashboard({
         });
 
   return (
-    <main className="relative min-h-screen overflow-hidden">
+    <main
+      id={DETALHES_ROOT_ID}
+      data-detalhes={mostrarDetalhes ? "on" : "off"}
+      className="relative min-h-screen overflow-hidden"
+    >
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-50"
@@ -203,6 +213,8 @@ export async function Dashboard({
               habilitadoAt={habilitadoAt}
               expiresAt={expiresAt}
             />
+            {/* Notas de apoio: escondidas por padrão, tela limpa. */}
+            {!isTonTab && <DetalhesToggle hmac={hmac} inicial={mostrarDetalhes} />}
             {/* Toggle light/dark isolado (produto não tem login/avatar) */}
             <ThemeToggle hmac={hmac} />
           </div>

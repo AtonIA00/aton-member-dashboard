@@ -1,5 +1,6 @@
 "use client";
 
+import { Detalhe } from "@/components/Detalhe";
 import { useMemo, useState } from "react";
 // Importa do meta-ads-kpi (client-safe), NÃO do meta-ads (server-only):
 // componente cliente que importa valor do módulo com o token quebra o build.
@@ -284,7 +285,7 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
         </table>
       </div>
 
-      <div className="border-t border-[color:var(--border)] px-6 py-2 text-[10px] leading-relaxed text-[color:var(--muted-foreground)]/70">
+      <Detalhe className="border-t border-[color:var(--border)] px-6 py-2 text-[10px] leading-relaxed text-[color:var(--muted-foreground)]/70">
         Leia como funil: <strong className="font-semibold">reproduções</strong> →{" "}
         <strong className="font-semibold">passou do hook</strong> (3s) →{" "}
         <strong className="font-semibold">viu a mensagem</strong> (75%) →{" "}
@@ -298,7 +299,7 @@ export function VideoRetentionTable({ metaAds, leadsByAdId }: Props) {
         40–50s faz 0,086). A régua de <em>ret. body</em> é ajustada pela duração de cada vídeo —
         alcançar 75% de um vídeo longo é mecanicamente mais difícil.
         Métricas de vídeo via Meta Ads; leads da base Aton.
-      </div>
+      </Detalhe>
     </div>
   );
 }

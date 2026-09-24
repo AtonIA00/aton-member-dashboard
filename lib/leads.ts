@@ -102,6 +102,10 @@ export type Deltas = {
    *  porque entrou mais lead, o aproveitamento cai). */
   mqlRateInteragiram: Delta;
   agendadoPlus: Delta;
+  /** Delta da TAXA de conversão. Existe desde que o card de Convertido passou
+   *  a destacar a taxa, e não a contagem: variação de contagem embaixo de uma
+   *  taxa seria lida como se a taxa tivesse mudado aquilo. */
+  pctAgendamento: Delta;
   anunciosAtivos: Delta;
   campanhasAtivas: Delta;
 };
@@ -366,6 +370,10 @@ export async function getDashboardData(
         ),
         agendadoPlus: computeDelta(kpis.agendadoPlus, kpisPrevious.agendadoPlus, {
           kind: "count",
+          orientation: "higher_is_better",
+        }),
+        pctAgendamento: computeDelta(kpis.pctAgendamento, kpisPrevious.pctAgendamento, {
+          kind: "percent",
           orientation: "higher_is_better",
         }),
         anunciosAtivos: computeDelta(

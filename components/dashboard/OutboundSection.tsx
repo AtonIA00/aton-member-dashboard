@@ -1,4 +1,5 @@
 import type { OutboundData } from "@/lib/outbound";
+import { Detalhe } from "@/components/Detalhe";
 
 // Funil de DISPARO ATIVO. Aparece só pra quem tem disparo — assinante de
 // inbound não vê nada disto.
@@ -71,7 +72,7 @@ export function OutboundSection({ data }: { data: OutboundData }) {
 
           {/* Falha de envio: a perda que não é da mensagem. */}
           {falha > 0 && (
-            <div
+            <Detalhe
               className={
                 "flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-[color:var(--border)] px-6 py-3 text-xs " +
                 (falhaAlta
@@ -87,7 +88,7 @@ export function OutboundSection({ data }: { data: OutboundData }) {
                 ({pct(100 - data.pctEntrega)} da base) — falha no envio, não na abordagem. É a
                 única perda aqui que se resolve na operação, não no texto.
               </span>
-            </div>
+            </Detalhe>
           )}
 
           <div className="grid gap-px bg-[color:var(--border)]/40 sm:grid-cols-2">
@@ -112,10 +113,10 @@ export function OutboundSection({ data }: { data: OutboundData }) {
                       : `${data.horasMediana.toFixed(1).replace(".", ",")} h`}
                   </p>
                   {data.emVoo > 0 && (
-                    <p className="mt-2 text-xs text-[color:var(--muted-foreground)]">
+                    <Detalhe as="p" className="mt-2 text-xs text-[color:var(--muted-foreground)]">
                       {int(data.emVoo)} {data.emVoo === 1 ? "contato saiu" : "contatos saíram"} há
                       menos de 24h — a taxa de resposta do período ainda pode subir.
-                    </p>
+                    </Detalhe>
                   )}
                 </>
               )}
@@ -144,11 +145,11 @@ export function OutboundSection({ data }: { data: OutboundData }) {
                     ))}
                   </ul>
                   {data.tentativaCobertura < responderam && (
-                    <p className="mt-2 text-[11px] text-[color:var(--muted-foreground)]/80">
+                    <Detalhe as="p" className="mt-2 text-[11px] text-[color:var(--muted-foreground)]/80">
                       Dado disponível para {int(data.tentativaCobertura)} dos {int(responderam)} que
                       responderam — o registro é recente, e ausência aqui não quer dizer que não
                       responderam.
-                    </p>
+                    </Detalhe>
                   )}
                 </>
               )}
@@ -161,11 +162,14 @@ export function OutboundSection({ data }: { data: OutboundData }) {
               Esteira de retomada
             </h3>
             {!data.retomadaAtiva ? (
-              <p className="mt-2 text-sm text-[color:var(--muted-foreground)]">
-                A esteira ainda não registrou nenhum toque. Isso significa{" "}
-                <strong className="font-semibold">sem dado</strong>, não desempenho zero — os
-                follow-ups aparecem aqui assim que começarem a rodar.
-              </p>
+              <>
+                <p className="mt-2 text-sm text-[color:var(--muted-foreground)]">Ainda sem dados.</p>
+                <Detalhe as="p" className="mt-1 text-xs text-[color:var(--muted-foreground)]">
+                  A esteira ainda não registrou nenhum toque. Isso significa{" "}
+                  <strong className="font-semibold">sem dado</strong>, não desempenho zero: os
+                  follow-ups aparecem aqui assim que começarem a rodar.
+                </Detalhe>
+              </>
             ) : (
               <div className="mt-3 grid grid-cols-5 gap-px overflow-hidden rounded-[var(--radius-md)] bg-[color:var(--border)]/40">
                 {data.retomada.map((t) => (
@@ -185,7 +189,7 @@ export function OutboundSection({ data }: { data: OutboundData }) {
             )}
           </div>
 
-          <div className="border-t border-[color:var(--border)] px-6 py-2 text-[10px] leading-relaxed text-[color:var(--muted-foreground)]/70">
+          <Detalhe className="border-t border-[color:var(--border)] px-6 py-2 text-[10px] leading-relaxed text-[color:var(--muted-foreground)]/70">
             <strong className="font-semibold">Responderam</strong> = respondeu a pelo menos uma
             mensagem do disparo (conta só a primeira resposta).{" "}
             <strong className="font-semibold">Avançaram</strong> = o atendimento chegou a um
@@ -208,7 +212,7 @@ export function OutboundSection({ data }: { data: OutboundData }) {
                 a outra.
               </>
             )}
-          </div>
+          </Detalhe>
         </>
       )}
     </div>

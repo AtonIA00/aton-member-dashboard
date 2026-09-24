@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Montserrat } from "next/font/google";
+import { Geist, Geist_Mono, Montserrat, Space_Grotesk, Urbanist } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,6 +16,20 @@ const montserrat = Montserrat({
   variable: "--font-montserrat",
   subsets: ["latin"],
   weight: ["600", "700", "800"],
+});
+
+// Faixa de KPIs (guia de estilo do José, 24/09/2026): número grande e LEVE
+// em Urbanist, legenda da régua em Space Grotesk. Só os pesos usados.
+const urbanist = Urbanist({
+  variable: "--font-urbanist",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+});
+
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
+  subsets: ["latin"],
+  weight: ["400"],
 });
 
 export const metadata: Metadata = {
@@ -51,7 +65,7 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      className={`${geistSans.variable} ${geistMono.variable} ${montserrat.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${montserrat.variable} ${urbanist.variable} ${spaceGrotesk.variable} h-full antialiased`}
       // data-theme final é setado pelo script inline antes do paint;
       // o valor aqui é fallback no caso de JS estar desabilitado.
       data-theme="light"
