@@ -1,6 +1,6 @@
 import "server-only";
 import { getSupabaseAdmin } from "./supabase/server";
-import { classify, GRUPO_LABEL } from "./classify";
+import { classify, GRUPO_LABEL, posAtendimento } from "./classify";
 import {
   previousRange,
   type DateRange,
@@ -67,6 +67,10 @@ export type Kpis = {
   mqlSemClassificacao: number;
   agendadoPlus: number;
   pctAgendamento: number;
+  /** Pós-atendimento (só existe para quem registra visita e venda). Cumulativo:
+   *  visitas inclui quem já está em "Vendido". */
+  visitas: number;
+  vendas: number;
   anunciosAtivos: number;
   campanhasAtivas: number;
 };
@@ -120,6 +124,11 @@ export type DashboardData = {
   /** Dimensões disponíveis no recorte do período (ANTES dos filtros). */
   dimensions: Dimensions;
   kpis: Kpis;
+  /** O assinante registra visita e venda (algum lead em "Visita Feita" ou
+   *  "Vendido" nos últimos 12 meses). Decide se o bloco de pós-atendimento e
+   *  as etapas extras do funil aparecem. Olha 12 meses e não o período: quem
+   *  registra, registra; período sem venda mostra zero, não esconde o bloco. */
+  temPosAtendimento: boolean;
   /** KPIs do período anterior (M8). null quando previousRange=null. */
   kpisPrevious: Kpis | null;
   /** Deltas atual vs anterior por KPI (M8). null quando previousRange=null. */
@@ -348,6 +357,7 @@ export async function getDashboardData(
     : [];
 
   const kpis = computeKpis(currentFiltered);
+  const temPosAtendimento = twelveMoLeads.some((l) => posAtendimento(l.etapa_funil) !== null);
   const kpisPrevious = prev ? computeKpis(previousFiltered) : null;
   const deltas: Deltas | null = kpisPrevious
     ? {
@@ -404,7 +414,8 @@ export async function getDashboardData(
     kpis,
     kpisPrevious,
     deltas,
-    funnel: computeFunnel(currentFiltered),
+    temPosAtendimento,
+    funnel: computeFunnel(currentFiltered, temPosAtendimento),
     adsPerformance,
     charts: {
       ...buildAllCharts(currentFiltered),
@@ -426,6 +437,8 @@ export function computeKpis(leads: LeadRow[]): Kpis {
   let mqlSimInteragiram = 0;
   let mqlSemClassificacao = 0;
   let agendadoPlus = 0;
+  let visitas = 0;
+  let vendas = 0;
   const anuncios = new Set<string>();
   const campanhas = new Set<string>();
 
@@ -433,6 +446,9 @@ export function computeKpis(leads: LeadRow[]): Kpis {
     const g = classify(l.etapa_funil);
     if (g === "Novo") novos++;
     if (g === "Agendado+") agendadoPlus++;
+    const pos = posAtendimento(l.etapa_funil);
+    if (pos) visitas++;
+    if (pos === "venda") vendas++;
     const mqlRaw = (l.mql ?? "").trim();
     if (mqlRaw === "") mqlSemClassificacao++;
     if (mqlRaw.toLowerCase() === "sim") {
@@ -460,20 +476,27 @@ export function computeKpis(leads: LeadRow[]): Kpis {
     mqlSemClassificacao,
     agendadoPlus,
     pctAgendamento: safeDiv(agendadoPlus, total),
+    visitas,
+    vendas,
     anunciosAtivos: anuncios.size,
     campanhasAtivas: campanhas.size,
   };
 }
 
-export function computeFunnel(leads: LeadRow[]): FunnelStep[] {
+export function computeFunnel(leads: LeadRow[], comPosAtendimento = false): FunnelStep[] {
   const total = leads.length;
   let novos = 0;
   let mqlSim = 0;
   let agendadoPlus = 0;
+  let visitas = 0;
+  let vendas = 0;
   for (const l of leads) {
     const g = classify(l.etapa_funil);
     if (g === "Novo") novos++;
     if (g === "Agendado+") agendadoPlus++;
+    const pos = posAtendimento(l.etapa_funil);
+    if (pos) visitas++;
+    if (pos === "venda") vendas++;
     if ((l.mql ?? "").toLowerCase().trim() === "sim") mqlSim++;
   }
   const interagiram = total - novos;
@@ -484,6 +507,12 @@ export function computeFunnel(leads: LeadRow[]): FunnelStep[] {
     { label: "Interagiram", count: interagiram, pctOfTotal: pct(interagiram) },
     { label: "MQL Sim", count: mqlSim, pctOfTotal: pct(mqlSim) },
     { label: GRUPO_LABEL["Agendado+"], count: agendadoPlus, pctOfTotal: pct(agendadoPlus) },
+    ...(comPosAtendimento
+      ? [
+          { label: "Visita feita", count: visitas, pctOfTotal: pct(visitas) },
+          { label: "Vendido", count: vendas, pctOfTotal: pct(vendas) },
+        ]
+      : []),
   ];
 }
 

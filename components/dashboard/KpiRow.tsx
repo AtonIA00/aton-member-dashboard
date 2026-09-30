@@ -32,6 +32,8 @@ type Props = {
   kpisPrevious: Kpis | null;
   /** Deltas por KPI. null = "Todo período" ou sem referência. */
   deltas: Deltas | null;
+  /** Assinante registra visita e venda: mostra o bloco de pós-atendimento. */
+  temPosAtendimento?: boolean;
 };
 
 function pct(n: number): string {
@@ -59,7 +61,7 @@ type Coluna = {
   notas?: ReactNode[];
 };
 
-export function KpiRow({ kpis, kpisPrevious, deltas }: Props) {
+export function KpiRow({ kpis, kpisPrevious, deltas, temPosAtendimento = false }: Props) {
   // Ninguém respondeu: dividir por zero daria 0%, que o assinante leria como
   // "meu atendimento qualifica zero" quando o certo é "não houve conversa".
   const semInteracao = kpis.interagiram === 0;
@@ -125,17 +127,61 @@ export function KpiRow({ kpis, kpisPrevious, deltas }: Props) {
     },
   ];
 
+  // Pós-atendimento: cada taxa sobre a ETAPA ANTERIOR, que é a pergunta que o
+  // assinante faz ("de quem agendou, quantos foram?"; "de quem visitou,
+  // quantos compraram?"). Sobre o total de leads, fica no Detalhes. Sem meta:
+  // não há histórico para calibrar (o registro começou em 30/09/2026), então
+  // não tem régua. Bloco separado porque o guia limita o strip a 5 colunas.
+  const pos: Coluna[] = temPosAtendimento
+    ? [
+        {
+          rotulo: "Visita feita",
+          valor: kpis.agendadoPlus > 0 ? pct(kpis.visitas / kpis.agendadoPlus) : "—",
+          apoio:
+            kpis.agendadoPlus > 0
+              ? `${int(kpis.visitas)} de ${int(kpis.agendadoPlus)} convertidos`
+              : "nenhum convertido no período",
+          notas:
+            kpis.total > 0 ? [`Sobre o total de leads: ${pct(kpis.visitas / kpis.total)}`] : [],
+        },
+        {
+          rotulo: "Vendido",
+          valor: kpis.visitas > 0 ? pct(kpis.vendas / kpis.visitas) : "—",
+          apoio:
+            kpis.visitas > 0
+              ? `${int(kpis.vendas)} de ${int(kpis.visitas)} visitas`
+              : "nenhuma visita no período",
+          notas:
+            kpis.total > 0 ? [`Sobre o total de leads: ${pct(kpis.vendas / kpis.total)}`] : [],
+        },
+      ]
+    : [];
+
   return (
-    <section
-      aria-label="Indicadores principais"
-      className="kpi-strip rounded-[24px] border border-[color:var(--border)] bg-[color:var(--card)] py-6"
-    >
-      <div className="grid grid-cols-2 gap-y-8 lg:grid-cols-4 lg:gap-y-0 lg:[&>*+*]:border-l lg:[&>*+*]:border-[color:var(--kpi-divisor)]">
-        {colunas.map((c) => (
-          <ColunaKpi key={c.rotulo} c={c} />
-        ))}
-      </div>
-    </section>
+    <>
+      <section
+        aria-label="Indicadores principais"
+        className="kpi-strip rounded-[24px] border border-[color:var(--border)] bg-[color:var(--card)] py-6"
+      >
+        <div className="grid grid-cols-2 gap-y-8 lg:grid-cols-4 lg:gap-y-0 lg:[&>*+*]:border-l lg:[&>*+*]:border-[color:var(--kpi-divisor)]">
+          {colunas.map((c) => (
+            <ColunaKpi key={c.rotulo} c={c} />
+          ))}
+        </div>
+      </section>
+      {pos.length > 0 && (
+        <section
+          aria-label="Pós-atendimento"
+          className="kpi-strip mt-4 rounded-[24px] border border-[color:var(--border)] bg-[color:var(--card)] py-6"
+        >
+          <div className="grid grid-cols-2 lg:grid-cols-4 [&>*+*]:border-l [&>*+*]:border-[color:var(--kpi-divisor)]">
+            {pos.map((c) => (
+              <ColunaKpi key={c.rotulo} c={c} />
+            ))}
+          </div>
+        </section>
+      )}
+    </>
   );
 }
 

@@ -33,6 +33,12 @@ export const STATUS_OPTIONS: { grupo: Grupo; label: string; value: string }[] = 
   { grupo: "Agendado+", label: "Especialista", value: "Especialista" },
   { grupo: "Agendado+", label: "Negociação", value: "Negociacao" },
   { grupo: "Agendado+", label: "Financeiro", value: "Financeiro" },
+  // Pós-atendimento (EMIVE, 30/09/2026): gravadas por nós da UChat quando o
+  // lead visita e quando compra. Ficam no grupo Convertido porque etapa_funil
+  // é um campo só: o lead que avança de "Agendado" para "Visita Feita" não
+  // pode SAIR do Convertido ao avançar.
+  { grupo: "Agendado+", label: "Visita feita", value: "Visita Feita" },
+  { grupo: "Agendado+", label: "Vendido", value: "Vendido" },
   { grupo: "Descartado", label: "Não se interessou", value: "Não se interessou" },
   { grupo: "Descartado", label: "Lead desqualificado", value: "Lead desqualificado" },
   { grupo: "Descartado", label: "Corretor de imóveis", value: "Corretor de imóveis" },
@@ -45,7 +51,24 @@ const SET_AGENDADO_PLUS = new Set([
   "especialista",
   "negociacao",
   "financeiro",
+  "visita feita",
+  "vendido",
 ]);
+
+export type PosAtendimento = "visita" | "venda";
+
+/**
+ * Onde o lead está DEPOIS do atendimento, para quem registra isso. O campo é
+ * único e sobrescrito a cada avanço, então as etapas são cumulativas: quem
+ * está em "Vendido" também visitou (ou pulou a visita, e contar como visita é
+ * o erro menor, porque a alternativa é a taxa de fechamento passar de 100%).
+ */
+export function posAtendimento(etapaFunil: string | null | undefined): PosAtendimento | null {
+  const e = (etapaFunil ?? "").toLowerCase().trim();
+  if (e === "vendido") return "venda";
+  if (e === "visita feita") return "visita";
+  return null;
+}
 
 const SET_DESCARTADO = new Set([
   "não se interessou",

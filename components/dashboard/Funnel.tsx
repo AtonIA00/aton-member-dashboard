@@ -9,6 +9,8 @@ const STEP_COLORS = [
   "#00c2ff", // aton-blue-cyan (Interagiram)
   "#10b981", // success (MQL Sim)
   "#f59e0b", // warning/amber (Agendado+)
+  "#8b5cf6", // violeta (Visita feita) — só para quem registra pós-atendimento
+  "#062f28", // forest (Vendido) — o fim do funil
 ];
 
 function pct(n: number): string {

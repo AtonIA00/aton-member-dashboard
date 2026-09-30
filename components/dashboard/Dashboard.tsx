@@ -308,6 +308,7 @@ function DashboardContent({
           kpis={data.kpis}
           kpisPrevious={data.kpisPrevious}
           deltas={data.deltas}
+          temPosAtendimento={data.temPosAtendimento}
         />
       </div>
 
