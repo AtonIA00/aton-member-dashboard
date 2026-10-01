@@ -875,6 +875,24 @@ export type CoreMetaInsights = {
   stale: boolean;
   /** ISO de quando os dados foram puxados da Meta (não de agora). */
   fetched_at: string;
+  /** Situação da conta AGORA (não do período): saldo de conta pré-paga, forma
+   *  de pagamento e status. null = a Meta não respondeu. Pedido do Murillo
+   *  (01/10/2026): antes de avisar "sem saldo", saber se a conta é pré-paga. */
+  conta?: CoreContaStatus | null;
+};
+
+export type CoreContaStatus = {
+  /** true = paga com saldo (para quando zera); false = cartão/boleto pós-pago. */
+  pre_paga: boolean | null;
+  /** Texto da Meta: "Saldo disponível (R$ 45,85)" ou "VISA *1234". */
+  forma_pagamento: string | null;
+  /** Saldo disponível em reais, lido do texto da Meta quando é pré-paga. */
+  saldo_disponivel: number | null;
+  /** 1 ativa, 2 desativada, 3 pendência de pagamento, 7 em análise, 9 em período de carência... */
+  status_conta: number | null;
+  /** Limite de gasto da conta e quanto já foi gasto nele (reais), quando há. */
+  limite_gasto: number | null;
+  gasto_no_limite: number | null;
 };
 
 // Cache dedicado (shape/período diferentes do usado no dash). Mantém o último
@@ -1077,7 +1095,27 @@ export async function getMetaInsightsForCore(
     }
   }
 
+  const contaP = fetchJson(
+    `${base}?fields=is_prepay_account,funding_source_details,account_status,spend_cap,amount_spent&${tokenParam}`,
+  ).catch(() => null);
   const [platRows, campRows, adsetRows] = await extrasP;
+  const contaJson = await contaP;
+  let conta: CoreContaStatus | null = null;
+  if (contaJson && !contaJson.error) {
+    const fsd = contaJson.funding_source_details as { display_string?: string } | undefined;
+    const forma = fsd?.display_string ?? null;
+    const m = forma ? forma.match(/R\$\s*([\d.]+,\d{2})/) : null;
+    const reais = (v: unknown) => (v === undefined || v === null || v === "" ? null : Math.round(Number(v)) / 100);
+    const cap = reais(contaJson.spend_cap);
+    conta = {
+      pre_paga: typeof contaJson.is_prepay_account === "boolean" ? contaJson.is_prepay_account : null,
+      forma_pagamento: forma,
+      saldo_disponivel: m ? Number(m[1].replace(/\./g, "").replace(",", ".")) : null,
+      status_conta: typeof contaJson.account_status === "number" ? contaJson.account_status : null,
+      limite_gasto: cap && cap > 0 ? cap : null,
+      gasto_no_limite: cap && cap > 0 ? reais(contaJson.amount_spent) : null,
+    };
+  }
   if (!platRows) console.error("[meta-ads] breakdown de plataforma falhou", { actId: account.act_id });
   if (!campRows || !adsetRows) console.error("[meta-ads] estrutura/orçamento falhou", { actId: account.act_id });
 
@@ -1233,6 +1271,7 @@ export async function getMetaInsightsForCore(
     campanhas,
     stale: false,
     fetched_at: new Date().toISOString(),
+    conta,
   };
 
   coreCache.set(cacheKey, { ts: now, data });
