@@ -505,7 +505,15 @@ export function computeFunnel(leads: LeadRow[], comPosAtendimento = false): Funn
   return [
     { label: "Leads Totais", count: total, pctOfTotal: 1 },
     { label: "Interagiram", count: interagiram, pctOfTotal: pct(interagiram) },
-    { label: "MQL Sim", count: mqlSim, pctOfTotal: pct(mqlSim) },
+    // Trava visual (decisão do Murillo, 01/10/2026): o funil nunca mostra MQL
+    // maior que Interagiram, o que seria impossível na leitura de funil. Só o
+    // funil: os outros números seguem contando mql="sim" como antes.
+    // A diferença existe por dois motivos verificados conversa a conversa:
+    // classificador da UChat marcando "sim" em quem nunca escreveu (corrigido
+    // na fonte) e fluxos que não movem a etapa de quem conversou, deixando
+    // MQL legítimo parado em "Novo Lead". Por isso a trava e não uma regra
+    // que exclua todo MQL em "Novo Lead".
+    { label: "MQL Sim", count: Math.min(mqlSim, interagiram), pctOfTotal: pct(Math.min(mqlSim, interagiram)) },
     { label: GRUPO_LABEL["Agendado+"], count: agendadoPlus, pctOfTotal: pct(agendadoPlus) },
     ...(comPosAtendimento
       ? [
