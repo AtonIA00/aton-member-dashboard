@@ -930,7 +930,16 @@ export async function getMetaInsightsForCore(
   if (!account) return { ok: false, reason: "not_mapped" };
 
   const { de, ate } = lastNDaysRange(days, until);
-  const cacheKey = `${account.act_id}|${de}|${ate}`;
+  // A chave PRECISA ter a workspace e as exclusões: duas workspaces podem
+  // compartilhar a mesma conta (Cincorp: Dolce Vitta 287257 e Showa 323753)
+  // com recortes diferentes. Sem isso, a segunda recebia o payload da
+  // primeira, inclusive com o workspace_id dela no corpo.
+  const excluidasCore = new Set(
+    (account.campanhas_excluidas ?? []).map(chaveCampanha).filter(Boolean),
+  );
+  const cacheKey =
+    `${workspaceId}|${account.act_id}|${de}|${ate}|x:` +
+    [...excluidasCore].sort().join("~");
   const cached = coreCache.get(cacheKey);
   const now = Date.now();
   if (cached && now - cached.ts < CORE_TTL) {
@@ -1014,6 +1023,27 @@ export async function getMetaInsightsForCore(
     return { ok: false, reason: "upstream_failed" };
   }
 
+  // Conta COMPARTILHADA: tira os anúncios das campanhas que não são do funil
+  // desta workspace, com a mesma regra do painel (casa por campaign_id OU
+  // campaign_name). Feito ANTES de miniaturas, plataforma, estrutura e total,
+  // para tudo o que vem depois falar só do recorte desta workspace.
+  if (excluidasCore.size > 0) {
+    const mantidos = porAnuncio.filter(
+      (a) =>
+        !excluidasCore.has(chaveCampanha(a.campaign_id)) &&
+        !excluidasCore.has(chaveCampanha(a.campaign_name)),
+    );
+    if (mantidos.length === porAnuncio.length) {
+      console.warn("[meta-ads] core: exclusão de campanha não casou com nada", {
+        workspaceId,
+        actId: account.act_id,
+      });
+    }
+    porAnuncio.length = 0;
+    porAnuncio.push(...mantidos);
+  }
+  const adsDoRecorte = new Set(porAnuncio.map((a) => a.ad_id));
+
   // ── Extras do Pulso: plataforma REALIZADA + estrutura/orçamento ─────────
   // 3 chamadas FIXAS por conta, em paralelo — nunca 1+N (puxar targeting
   // anúncio a anúncio estoura limite de taxa). Medido na carteira inteira em
@@ -1060,6 +1090,8 @@ export async function getMetaInsightsForCore(
       const adId = String(r.ad_id ?? "").trim();
       const platform = String(r.publisher_platform ?? "").trim();
       if (!adId || !platform) continue;
+      // O breakdown vem da conta inteira: só soma anúncio do recorte.
+      if (!adsDoRecorte.has(adId)) continue;
       const spend = num(r.spend);
       const impressions = num(r.impressions);
       const lista = byAd.get(adId) ?? [];
