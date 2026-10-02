@@ -343,7 +343,11 @@ function classificarEntrada(
   creative: CreativeMeta | undefined,
 ): EntradaLead | null {
   if (destinationType === "ON_AD") return "formulario_meta";
-  if (destinationType === "WHATSAPP") {
+  /* Conjunto com mais de um destino de mensagem também leva ao WhatsApp:
+     MESSAGING_INSTAGRAM_DIRECT_WHATSAPP (e variações MESSAGING_*_WHATSAPP).
+     A campanha "Set 2026 Whatsapp" da EMIVE é assim, e os 19 leads e a venda
+     dela caíam em "Sem anúncio rastreado" (Rafaela, 02/10/2026). */
+  if (destinationType === "WHATSAPP" || (destinationType?.startsWith("MESSAGING_") && destinationType.includes("WHATSAPP"))) {
     return creative?.flow === true ? "whatsapp_flow" : "whatsapp_direto";
   }
   return null;
