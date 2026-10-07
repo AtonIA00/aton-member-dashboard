@@ -125,7 +125,7 @@ const COLUMNS: AdsColumn[] = [
     header: "Anúncio",
     width: 34,
     pdfWidth: 92,
-    value: (r, ad) => (r.isUnknownId ? "Sem ID" : (ad?.[4] ?? "")),
+    value: (r, ad) => (r.isUnknownId ? r.idAnuncio : (ad?.[4] ?? "")),
     guardCsv: true,
   },
   {

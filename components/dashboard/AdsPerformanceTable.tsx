@@ -254,8 +254,8 @@ export function AdsPerformanceTable({
                 </td>
                 <td className="max-w-[280px] px-4 py-2 text-xs text-[color:var(--foreground)]">
                   {r.isUnknownId ? (
-                    <span className="font-mono italic text-[color:var(--muted-foreground)]/80">
-                      Sem ID
+                    <span className="italic text-[color:var(--muted-foreground)]/80">
+                      {r.idAnuncio}
                     </span>
                   ) : (
                     <AdIdentity idAnuncio={r.idAnuncio} meta={adOf(r)} hmac={hmac} />

@@ -524,6 +524,16 @@ export function computeFunnel(leads: LeadRow[], comPosAtendimento = false): Funn
   ];
 }
 
+/** Origem de um lead que não veio de anúncio rastreado. Medido em 07/10/2026,
+ *  90 dias: canal_campanha nesses leads só aparece como "site" (175) ou vazio
+ *  (1.991); nenhum lead de anúncio sem ID. */
+function origemSemAnuncio(canal: string | null | undefined): { chave: string; rotulo: string } {
+  if ((canal ?? "").trim().toLowerCase() === "site") {
+    return { chave: "origem_site", rotulo: "Site (formulário)" };
+  }
+  return { chave: "origem_nao_identificada", rotulo: "Origem não identificada" };
+}
+
 export function computeAdsPerformance(leads: LeadRow[]): AdsPerfRow[] {
   type Bucket = {
     idAnuncio: string;
@@ -538,10 +548,18 @@ export function computeAdsPerformance(leads: LeadRow[]): AdsPerfRow[] {
   for (const l of leads) {
     const raw = (l.id_anuncio ?? "").trim();
     const isUnknownId = !raw;
-    const key = isUnknownId ? "__sem_id__" : raw;
+    // Lead sem anúncio é quebrado pela origem que o fluxo grava em
+    // canal_campanha (pedido do Murillo, 07/10/2026: "Sem ID" o assinante não
+    // entendia). Só o que o canal DIZ: canal "site" vira "Site (formulário)";
+    // todo o resto, inclusive quem escreveu direto no WhatsApp, fica em
+    // "Origem não identificada", porque sem anúncio e sem canal o dado não
+    // distingue os dois. Nunca chutar "Site" pela falta de ID: um lead de
+    // anúncio que perdeu o ID viraria site e o assinante concluiria errado.
+    const origem = isUnknownId ? origemSemAnuncio(l.canal_campanha) : null;
+    const key = origem ? `__${origem.chave}__` : raw;
     let b = map.get(key);
     if (!b) {
-      b = { idAnuncio: isUnknownId ? "Sem ID" : raw, isUnknownId, total: 0, agendados: 0, mqlSim: 0, novos: 0 };
+      b = { idAnuncio: origem ? origem.rotulo : raw, isUnknownId, total: 0, agendados: 0, mqlSim: 0, novos: 0 };
       map.set(key, b);
     }
     b.total++;
@@ -568,6 +586,8 @@ export function computeAdsPerformance(leads: LeadRow[]): AdsPerfRow[] {
     });
   }
 
+  // Linhas sem anúncio continuam no topo (spec original), agora uma por
+  // origem, entre elas pelo volume.
   rows.sort((a, b) => {
     if (a.isUnknownId && !b.isUnknownId) return -1;
     if (!a.isUnknownId && b.isUnknownId) return 1;
