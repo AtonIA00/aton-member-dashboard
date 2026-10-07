@@ -43,11 +43,15 @@ type Props = {
 
 const PAGE_SIZE = 50;
 
+// `data` guarda a DATA do lead (dia de Brasília) à meia-noite UTC, ex.:
+// "2026-10-05 00:00:00+00" para um lead de 05/10 às 13h59. Converter para o
+// fuso do navegador vira 04/10 21h e mostrava o dia ANTERIOR (All Resort,
+// 07/10/2026). É data pura: lê só o "YYYY-MM-DD", como o filtro de período,
+// os gráficos e a exportação já fazem.
 function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
+  if (!m) return "—";
+  return `${m[3]}/${m[2]}/${m[1].slice(2)}`;
 }
 
 function fmtTelefone(ddd: string | null, tel: string | null): string {
