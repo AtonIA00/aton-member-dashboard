@@ -36,6 +36,17 @@ export const dynamic = "force-dynamic";
 //     no conjunto; null onde não se aplica) e publisher_platforms, que é o
 //     placement CONFIGURADO.
 //
+// Desde 09/10/2026 (aditivo de novo): por anúncio reach, frequency,
+//   conversas_iniciadas (messaging_conversation_started_7d),
+//   custo_por_conversa, leads_formulario, video_p25/p50/p100/thruplay,
+//   video_tempo_medio_seg, effective_status/configured_status,
+//   criativo_titulo/criativo_texto; total.conversas_iniciadas e
+//   custo_por_conversa; status e updated_time em campanhas/conjuntos;
+//   campanhas_status (todas as não arquivadas, inclusive sem entrega);
+//   conta.disable_reason/balance/amount_spent/spend_cap; atividades dos
+//   últimos 7 dias; recortes (região, plataforma+posição, idade+gênero);
+//   parcial = alguma chamada complementar falhou ou bateu limite de taxa.
+//
 // ⚠️ Orçamento: a Meta devolve na unidade MÍNIMA da moeda (6000 = R$ 60,00).
 // Aqui já sai CONVERTIDO pra a mesma escala do spend — R$ 60,00 é 60.
 // ⚠️ publisher_platforms null = placements AUTOMÁTICOS (a Meta omite o campo

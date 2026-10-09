@@ -797,6 +797,78 @@ export type CoreAdInsight = {
    *  efetivamente entregou. null = a chamada de breakdown falhou ("não
    *  sei"); [] = a Meta respondeu e não houve entrega no período. */
   por_plataforma: CorePlatformSplit[] | null;
+  // ── Ampliação de 09/10/2026 (auditoria do Bastidor) ─────────────────────
+  // O Core dividia a verba pelas pessoas do CRM (R$ 15/pessoa) quando o custo
+  // real na Meta era ~R$ 10 por conversa, e chamava de "time olhando" uma
+  // campanha parada por saldo ou pausada à mão. Estes campos dão o dado cru.
+  /** Pessoas únicas alcançadas no período. NÃO somar entre anúncios (há
+   *  sobreposição); por isso não existe reach no `total`. */
+  reach: number;
+  /** impressions ÷ reach. null sem alcance. */
+  frequency: number | null;
+  /** action onsite_conversion.messaging_conversation_started_7d: conversas
+   *  iniciadas no WhatsApp/Messenger/Direct atribuídas ao anúncio. */
+  conversas_iniciadas: number;
+  /** spend ÷ conversas_iniciadas. null quando não houve conversa. */
+  custo_por_conversa: number | null;
+  /** Leads de formulário instantâneo reportados pela Meta. Mesmo valor de
+   *  meta_leads, com nome explícito. */
+  leads_formulario: number;
+  /** Reproduções que chegaram a 25/50/100% e ThruPlay (15s ou o vídeo todo). */
+  video_p25: number;
+  video_p50: number;
+  video_p100: number;
+  video_thruplay: number;
+  /** Tempo médio assistido, em segundos. null quando não é vídeo. */
+  video_tempo_medio_seg: number | null;
+  /** Status do anúncio AGORA (não do período): ACTIVE, PAUSED,
+   *  CAMPAIGN_PAUSED, ADSET_PAUSED, DISAPPROVED, WITH_ISSUES... effective
+   *  herda a pausa de cima; configured é o que está marcado no próprio
+   *  anúncio. null = a Meta não respondeu. */
+  effective_status: string | null;
+  configured_status: string | null;
+  /** Título e texto do criativo. null quando o criativo não tem (dinâmico). */
+  criativo_titulo: string | null;
+  criativo_texto: string | null;
+};
+
+/** Uma alteração feita na conta (GET /act_x/activities), últimos 7 dias. Só
+ *  status, orçamento, criação e edição de anúncio. Responde "quem pausou e
+ *  quando". actor_name "Meta" = ação automática da plataforma. */
+export type CoreAtividade = {
+  event_type: string;
+  event_time: string;
+  object_id: string | null;
+  object_name: string | null;
+  actor_name: string | null;
+  /** JSON da Meta já parseado quando possível (old_value, new_value,
+   *  campaign_id...); string crua quando não parseia. */
+  extra_data: unknown;
+};
+
+export type CoreRecorteRegiao = {
+  region: string;
+  spend: number;
+  impressions: number;
+  /** null: a Meta NÃO devolve conversas no recorte por região (medido em
+   *  09/10/2026: zero linhas com a action). Não é zero conversa. */
+  conversas: number | null;
+};
+
+export type CoreRecortePosicao = {
+  publisher_platform: string;
+  platform_position: string;
+  spend: number;
+  impressions: number;
+  link_clicks: number;
+  conversas: number | null;
+};
+
+export type CoreRecorteIdadeGenero = {
+  age: string;
+  gender: string;
+  spend: number;
+  conversas: number | null;
 };
 
 /** Split por plataforma. `platform` vai CRU como a Meta devolve — facebook,
@@ -824,6 +896,10 @@ export type CoreAdset = {
    *  Cavalcante 0 (tudo automático). Compare com o REALIZADO em
    *  por_anuncio[].por_plataforma. */
   publisher_platforms: string[] | null;
+  /** Status AGORA e última alteração (ISO da Meta). null = não devolvido. */
+  effective_status: string | null;
+  configured_status: string | null;
+  updated_time: string | null;
 };
 
 export type CoreCampaign = {
@@ -835,6 +911,9 @@ export type CoreCampaign = {
   daily_budget: number | null;
   lifetime_budget: number | null;
   conjuntos: CoreAdset[];
+  effective_status: string | null;
+  configured_status: string | null;
+  updated_time: string | null;
 };
 
 export type CoreMetaInsights = {
@@ -865,6 +944,11 @@ export type CoreMetaInsights = {
     /** Mix de plataforma da CONTA no período (soma dos anúncios). null = a
      *  chamada de breakdown falhou. */
     por_plataforma: CorePlatformSplit[] | null;
+    /** Soma das conversas iniciadas dos anúncios e o custo médio por conversa
+     *  (total.spend ÷ conversas). É ESTE o custo por contato, não verba ÷
+     *  pessoas do CRM. */
+    conversas_iniciadas: number;
+    custo_por_conversa: number | null;
   };
   por_anuncio: CoreAdInsight[];
   /** Estrutura + orçamento das campanhas que tiveram entrega no período.
@@ -883,7 +967,127 @@ export type CoreMetaInsights = {
    *  de pagamento e status. null = a Meta não respondeu. Pedido do Murillo
    *  (01/10/2026): antes de avisar "sem saldo", saber se a conta é pré-paga. */
   conta?: CoreContaStatus | null;
+  /** Alterações na conta nos últimos 7 dias (fixo, independe de `days`). Só
+   *  status, orçamento, criação e edição de anúncio. Em conta compartilhada,
+   *  eventos de campanhas excluídas ficam de fora. null = a Meta não
+   *  respondeu. */
+  atividades?: CoreAtividade[] | null;
+  /** Recortes do período, só das campanhas desta workspace. Cada um null
+   *  quando a Meta não respondeu. */
+  recortes?: {
+    regiao: CoreRecorteRegiao[] | null;
+    plataforma_posicao: CoreRecortePosicao[] | null;
+    idade_genero: CoreRecorteIdadeGenero[] | null;
+  };
+  /** true = alguma chamada complementar bateu no limite de taxa da Meta
+   *  (código 17 e afins) ou falhou, e o que faltou veio null. Os números principais
+   *  (spend, anúncios) não são parciais: se eles falham, o endpoint dá 502
+   *  ou serve o cache com stale. */
+  parcial?: boolean;
+  /** Estado de todas as campanhas não arquivadas da conta (sem as excluídas),
+   *  inclusive as que não entregaram no período. */
+  campanhas_status?: CoreCampanhaStatus[] | null;
 };
+
+type CoreStatusObj = {
+  effective_status: string | null;
+  configured_status: string | null;
+  updated_time: string | null;
+};
+
+export type CoreCampanhaStatus = {
+  campaign_id: string;
+  campaign_name: string | null;
+  daily_budget: number | null;
+  lifetime_budget: number | null;
+} & CoreStatusObj;
+
+/** Erros da Meta que são limite de taxa: devolvem parcial, não falha. */
+const CODIGOS_LIMITE = new Set([4, 17, 32, 613, 80000, 80003, 80004, 80014]);
+
+type CoreParcial<T> = { data: T | null; limite: boolean };
+
+/** Como fetchJson, mas diz se a falha foi limite de taxa (o fetchJson perde
+ *  o código do erro). */
+async function coreFetch(url: string): Promise<{ json: Record<string, unknown> | null; limite: boolean }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { cache: "no-store", signal: controller.signal });
+    const json = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!res.ok || !json || json.error) {
+      const code = Number((json?.error as { code?: unknown } | undefined)?.code);
+      const limite = CODIGOS_LIMITE.has(code);
+      console.error("[meta-ads] core extra !ok", { status: res.status, code, limite });
+      return { json: null, limite };
+    }
+    return { json, limite: false };
+  } catch (e) {
+    console.error("[meta-ads] core extra falhou", { error: e instanceof Error ? e.message : String(e) });
+    return { json: null, limite: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function coreGetPages(
+  url: string,
+  maxPages = CORE_MAX_PAGES,
+): Promise<CoreParcial<Array<Record<string, unknown>>>> {
+  const out: Array<Record<string, unknown>> = [];
+  let next: string | null = url;
+  for (let page = 0; next && page < maxPages; page++) {
+    let r = await coreFetch(next);
+    // Uma nova tentativa em falha que não é limite (timeout esporádico: a
+    // /activities do Showa abortou uma vez em 12s e respondeu em 0,6s depois).
+    if (!r.json && !r.limite) r = await coreFetch(next);
+    if (!r.json) return { data: null, limite: r.limite };
+    out.push(...((r.json.data as Array<Record<string, unknown>> | undefined) ?? []));
+    next = (r.json.paging as { next?: string } | undefined)?.next ?? null;
+  }
+  return { data: out, limite: false };
+}
+
+type CoreAdInfo = {
+  effective_status: string | null;
+  configured_status: string | null;
+  titulo: string | null;
+  texto: string | null;
+};
+
+/** Status e texto do criativo por anúncio, em lotes de 50 via ?ids=. Lote que
+ *  falha só deixa aqueles anúncios sem o dado. */
+async function coreAdsInfo(ids: string[], token: string): Promise<CoreParcial<Map<string, CoreAdInfo>>> {
+  const out = new Map<string, CoreAdInfo>();
+  const unicos = [...new Set(ids.filter(Boolean))];
+  let limite = false;
+  const lotes: string[][] = [];
+  for (let i = 0; i < unicos.length; i += 50) lotes.push(unicos.slice(i, i + 50));
+  await Promise.all(
+    lotes.map(async (lote) => {
+      const r = await coreFetch(
+        `https://graph.facebook.com/v21.0/?ids=${lote.join(",")}` +
+          `&fields=effective_status,configured_status,creative{title,body}` +
+          `&access_token=${encodeURIComponent(token)}`,
+      );
+      if (!r.json) {
+        if (r.limite) limite = true;
+        return;
+      }
+      for (const [id, v] of Object.entries(r.json)) {
+        const o = v as Record<string, unknown>;
+        const cr = (o.creative ?? {}) as Record<string, unknown>;
+        out.set(id, {
+          effective_status: (o.effective_status as string) ?? null,
+          configured_status: (o.configured_status as string) ?? null,
+          titulo: (cr.title as string) ?? null,
+          texto: (cr.body as string) ?? null,
+        });
+      }
+    }),
+  );
+  return { data: out, limite };
+}
 
 export type CoreContaStatus = {
   /** true = paga com saldo (para quando zera); false = cartão/boleto pós-pago. */
@@ -897,6 +1101,17 @@ export type CoreContaStatus = {
   /** Limite de gasto da conta e quanto já foi gasto nele (reais), quando há. */
   limite_gasto: number | null;
   gasto_no_limite: number | null;
+  /** Motivo de desativação da Meta (0 = nenhum). */
+  disable_reason: number | null;
+  /** Campo `balance` da Meta em reais. ⚠️ Em conta PÓS-paga é o valor a
+   *  pagar acumulado, não saldo; em pré-paga o saldo disponível confiável é
+   *  `saldo_disponivel`. */
+  balance: number | null;
+  /** Total gasto pela conta na vida toda e limite de gasto da conta (reais).
+   *  spend_cap null = sem limite. Quando amount_spent alcança spend_cap a
+   *  conta PARA de entregar. Ex.: ERS em 09/10/2026, 2.635,51 de 2.635,51. */
+  amount_spent: number | null;
+  spend_cap: number | null;
 };
 
 // Cache dedicado (shape/período diferentes do usado no dash). Mantém o último
@@ -972,7 +1187,10 @@ export async function getMetaInsightsForCore(
     "ad_id,ad_name,campaign_name,campaign_id,adset_id,adset_name," +
     "spend,impressions,clicks,inline_link_clicks," +
     "inline_link_click_ctr,cost_per_inline_link_click,cpm,actions,cost_per_action_type," +
-    "account_currency,video_play_actions,video_p75_watched_actions";
+    "account_currency,video_play_actions,video_p75_watched_actions," +
+    // Ampliação 09/10/2026: na MESMA chamada, sem request a mais.
+    "reach,frequency,video_p25_watched_actions,video_p50_watched_actions," +
+    "video_p100_watched_actions,video_thruplay_watched_actions,video_avg_time_watched_actions";
   const timeRange = encodeURIComponent(JSON.stringify({ since: de, until: ate }));
   const base = `https://graph.facebook.com/v21.0/${account.act_id}`;
   const tokenParam = `access_token=${encodeURIComponent(token)}`;
@@ -1002,6 +1220,10 @@ export async function getMetaInsightsForCore(
       const plays = actionValue(r.video_play_actions);
       const views3s = pickActionType(r.actions, "video_view");
       const p75 = actionValue(r.video_p75_watched_actions);
+      const spendAd = num(r.spend);
+      const conversas = pickActionType(r.actions, "onsite_conversion.messaging_conversation_started_7d");
+      const reach = num(r.reach);
+      const tempoMedio = actionValue(r.video_avg_time_watched_actions);
       porAnuncio.push({
         ad_id: adId,
         ad_name: (r.ad_name as string) ?? null,
@@ -1034,6 +1256,21 @@ export async function getMetaInsightsForCore(
         por_plataforma: null,
         entrada: null,
         destination_type: null,
+        reach,
+        frequency: reach > 0 ? round2c(num(r.frequency) || impressions / reach) : null,
+        conversas_iniciadas: conversas,
+        custo_por_conversa: conversas > 0 ? round2c(spendAd / conversas) : null,
+        leads_formulario: pickCoreLead(actions) ?? 0,
+        video_p25: actionValue(r.video_p25_watched_actions),
+        video_p50: actionValue(r.video_p50_watched_actions),
+        video_p100: actionValue(r.video_p100_watched_actions),
+        video_thruplay: actionValue(r.video_thruplay_watched_actions),
+        video_tempo_medio_seg: plays > 0 ? tempoMedio : null,
+        // preenchidos depois pela chamada de status/criativo
+        effective_status: null,
+        configured_status: null,
+        criativo_titulo: null,
+        criativo_texto: null,
       });
     }
     url = (json.paging as { next?: string } | undefined)?.next ?? null;
@@ -1079,11 +1316,38 @@ export async function getMetaInsightsForCore(
       `${base}/insights?level=ad&time_range=${timeRange}` +
         `&breakdowns=publisher_platform&fields=ad_id,spend,impressions&limit=500&${tokenParam}`,
     ),
-    fetchAllPages(`${base}/campaigns?fields=id,name,daily_budget,lifetime_budget&limit=500&${tokenParam}`),
+    fetchAllPages(
+      `${base}/campaigns?fields=id,name,daily_budget,lifetime_budget,` +
+        `effective_status,configured_status,updated_time&limit=500&${tokenParam}`,
+    ),
     fetchAllPages(
       `${base}/adsets?fields=id,name,campaign_id,daily_budget,lifetime_budget,` +
-        `destination_type,targeting{publisher_platforms}&limit=500&${tokenParam}`,
+        `destination_type,targeting{publisher_platforms},` +
+        `effective_status,configured_status,updated_time&limit=500&${tokenParam}`,
     ),
+  ]);
+
+  // ── Ampliação 09/10/2026: status + texto do criativo, atividades e
+  // recortes. Chamadas FIXAS por conta (5 + 1 a cada 50 anúncios), em
+  // paralelo. Detectam limite de taxa (código 17 e afins): o que bater no
+  // limite vem null e o payload sai com parcial: true. Os recortes são
+  // level=campaign, para filtrar as campanhas excluídas da workspace.
+  const recorte = (bd: string) =>
+    coreGetPages(
+      `${base}/insights?level=campaign&time_range=${timeRange}&breakdowns=${bd}` +
+        `&fields=campaign_id,spend,impressions,inline_link_clicks,actions&limit=500&${tokenParam}`,
+    );
+  const desde7d = Math.floor(Date.now() / 1000) - 7 * 86_400;
+  const novosP = Promise.all([
+    coreAdsInfo(porAnuncio.map((a) => a.ad_id), token),
+    coreGetPages(
+      `${base}/activities?since=${desde7d}` +
+        `&fields=event_type,event_time,object_id,object_name,actor_name,extra_data&limit=100&${tokenParam}`,
+      5,
+    ),
+    recorte("region"),
+    recorte("publisher_platform,platform_position"),
+    recorte("age,gender"),
   ]);
 
   // Miniaturas (best-effort, mesmo buscador do dash): falha vira null — a
@@ -1100,7 +1364,7 @@ export async function getMetaInsightsForCore(
   }
 
   const contaP = fetchJson(
-    `${base}?fields=is_prepay_account,funding_source_details,account_status,spend_cap,amount_spent&${tokenParam}`,
+    `${base}?fields=is_prepay_account,funding_source_details,account_status,spend_cap,amount_spent,disable_reason,balance&${tokenParam}`,
   ).catch(() => null);
   const [platRows, campRows, adsetRows] = await extrasP;
   const contaJson = await contaP;
@@ -1118,8 +1382,119 @@ export async function getMetaInsightsForCore(
       status_conta: typeof contaJson.account_status === "number" ? contaJson.account_status : null,
       limite_gasto: cap && cap > 0 ? cap : null,
       gasto_no_limite: cap && cap > 0 ? reais(contaJson.amount_spent) : null,
+      disable_reason: typeof contaJson.disable_reason === "number" ? contaJson.disable_reason : null,
+      balance: reais(contaJson.balance),
+      amount_spent: reais(contaJson.amount_spent),
+      spend_cap: cap && cap > 0 ? cap : null,
     };
   }
+  const [adsInfo, atvRes, regRes, posRes, ageRes] = await novosP;
+  // parcial = faltou algo complementar, por limite de taxa (código 17 e
+  // afins) ou por falha/timeout. O campo que faltou vem null.
+  const parcial = [adsInfo, atvRes, regRes, posRes, ageRes].some((r) => r.limite || r.data === null);
+
+  // Status e texto do criativo por anúncio.
+  for (const a of porAnuncio) {
+    const info = adsInfo.data?.get(a.ad_id);
+    if (!info) continue;
+    a.effective_status = info.effective_status;
+    a.configured_status = info.configured_status;
+    a.criativo_titulo = info.titulo;
+    a.criativo_texto = info.texto;
+  }
+
+  // Atividades: só status, orçamento, criação e edição de anúncio. Em conta
+  // compartilhada, descarta evento de campanha excluída (o extra_data traz o
+  // campaign_id). Pausa de campanha sem entrega no período aparece aqui
+  // mesmo sem nenhum anúncio no por_anuncio, que é o caso do Showa.
+  const TIPOS_ATIVIDADE =
+    /run_status|budget|^create_(ad|ad_set|campaign|campaign_group)$|^update_ad_creative$|^update_ad$/;
+  let atividades: CoreAtividade[] | null = null;
+  if (atvRes.data) {
+    atividades = [];
+    for (const e of atvRes.data) {
+      const tipo = String(e.event_type ?? "");
+      if (!TIPOS_ATIVIDADE.test(tipo)) continue;
+      let extra: unknown = e.extra_data ?? null;
+      if (typeof extra === "string") {
+        try {
+          extra = JSON.parse(extra);
+        } catch {
+          /* fica a string crua */
+        }
+      }
+      const campId =
+        extra && typeof extra === "object" && "campaign_id" in (extra as object)
+          ? String((extra as { campaign_id: unknown }).campaign_id)
+          : null;
+      if (
+        excluidasCore.size > 0 &&
+        ((campId && excluidasCore.has(chaveCampanha(campId))) ||
+          excluidasCore.has(chaveCampanha(String(e.object_id ?? ""))))
+      ) {
+        continue;
+      }
+      atividades.push({
+        event_type: tipo,
+        event_time: String(e.event_time ?? ""),
+        object_id: e.object_id ? String(e.object_id) : null,
+        object_name: (e.object_name as string) ?? null,
+        actor_name: (e.actor_name as string) ?? null,
+        extra_data: extra,
+      });
+    }
+  }
+
+  // Recortes: agrega as linhas por chave, sem as campanhas excluídas.
+  // `conversas` fica null quando nenhuma linha trouxe a action (a Meta não a
+  // devolve por região), para não virar "zero conversa".
+  const ACAO_CONVERSA = "onsite_conversion.messaging_conversation_started_7d";
+  function agrega<T>(
+    linhas: Array<Record<string, unknown>> | null,
+    chave: (r: Record<string, unknown>) => string,
+    monta: (r: Record<string, unknown>) => T,
+  ): Array<T & { spend: number; impressions: number; link_clicks: number; conversas: number | null }> | null {
+    if (!linhas) return null;
+    const m = new Map<string, { base: T; spend: number; impressions: number; link_clicks: number; conv: number; temConv: boolean }>();
+    for (const r of linhas) {
+      if (excluidasCore.size > 0 && excluidasCore.has(chaveCampanha(String(r.campaign_id ?? "")))) continue;
+      const k = chave(r);
+      const v = m.get(k) ?? { base: monta(r), spend: 0, impressions: 0, link_clicks: 0, conv: 0, temConv: false };
+      v.spend += num(r.spend);
+      v.impressions += num(r.impressions);
+      v.link_clicks += num(r.inline_link_clicks);
+      const lista = r.actions as Array<{ action_type?: string }> | undefined;
+      if (Array.isArray(lista) && lista.some((x) => x.action_type === ACAO_CONVERSA)) v.temConv = true;
+      v.conv += pickActionType(r.actions, ACAO_CONVERSA);
+      m.set(k, v);
+    }
+    const algumaConv = [...m.values()].some((v) => v.temConv);
+    return [...m.values()]
+      .map((v) => ({
+        ...v.base,
+        spend: round2c(v.spend),
+        impressions: v.impressions,
+        link_clicks: v.link_clicks,
+        conversas: algumaConv ? v.conv : null,
+      }))
+      .sort((a, b) => b.spend - a.spend);
+  }
+  const reg = agrega(regRes.data, (r) => String(r.region ?? ""), (r) => ({ region: String(r.region ?? "") }));
+  const pos = agrega(
+    posRes.data,
+    (r) => `${r.publisher_platform}|${r.platform_position}`,
+    (r) => ({ publisher_platform: String(r.publisher_platform ?? ""), platform_position: String(r.platform_position ?? "") }),
+  );
+  const ida = agrega(
+    ageRes.data,
+    (r) => `${r.age}|${r.gender}`,
+    (r) => ({ age: String(r.age ?? ""), gender: String(r.gender ?? "") }),
+  );
+  const recortes = {
+    regiao: reg ? reg.map(({ region, spend, impressions, conversas }) => ({ region, spend, impressions, conversas })) : null,
+    plataforma_posicao: pos,
+    idade_genero: ida ? ida.map(({ age, gender, spend, conversas }) => ({ age, gender, spend, conversas })) : null,
+  };
   if (!platRows) console.error("[meta-ads] breakdown de plataforma falhou", { actId: account.act_id });
   if (!campRows || !adsetRows) console.error("[meta-ads] estrutura/orçamento falhou", { actId: account.act_id });
 
@@ -1154,8 +1529,13 @@ export async function getMetaInsightsForCore(
   // edges só enriquecem com orçamento e placement configurado.
   const orcCampanha = new Map<
     string,
-    { daily: number | null; lifetime: number | null; name: string | null }
+    { daily: number | null; lifetime: number | null; name: string | null } & CoreStatusObj
   >();
+  const statusObj = (o: Record<string, unknown>): CoreStatusObj => ({
+    effective_status: (o.effective_status as string) ?? null,
+    configured_status: (o.configured_status as string) ?? null,
+    updated_time: (o.updated_time as string) ?? null,
+  });
   for (const c of campRows ?? []) {
     const id = String(c.id ?? "").trim();
     if (!id) continue;
@@ -1163,12 +1543,13 @@ export async function getMetaInsightsForCore(
       daily: budgetToMajor(c.daily_budget),
       lifetime: budgetToMajor(c.lifetime_budget),
       name: (c.name as string) ?? null,
+      ...statusObj(c),
     });
   }
   const destinoConjunto = new Map<string, string | null>();
   const orcConjunto = new Map<
     string,
-    { daily: number | null; lifetime: number | null; platforms: string[] | null }
+    { daily: number | null; lifetime: number | null; platforms: string[] | null } & CoreStatusObj
   >();
   for (const s of adsetRows ?? []) {
     const id = String(s.id ?? "").trim();
@@ -1181,6 +1562,7 @@ export async function getMetaInsightsForCore(
       daily: budgetToMajor(s.daily_budget),
       lifetime: budgetToMajor(s.lifetime_budget),
       platforms: plats,
+      ...statusObj(s),
     });
     destinoConjunto.set(id, (s.destination_type as string) ?? null);
   }
@@ -1207,6 +1589,9 @@ export async function getMetaInsightsForCore(
         daily_budget: o?.daily ?? null,
         lifetime_budget: o?.lifetime ?? null,
         conjuntos: [],
+        effective_status: o?.effective_status ?? null,
+        configured_status: o?.configured_status ?? null,
+        updated_time: o?.updated_time ?? null,
       };
       campMap.set(a.campaign_id, camp);
     }
@@ -1219,10 +1604,40 @@ export async function getMetaInsightsForCore(
         daily_budget: o?.daily ?? null,
         lifetime_budget: o?.lifetime ?? null,
         publisher_platforms: o?.platforms ?? null,
+        effective_status: o?.effective_status ?? null,
+        configured_status: o?.configured_status ?? null,
+        updated_time: o?.updated_time ?? null,
       });
     }
   }
   const campanhas = [...campMap.values()];
+
+  // `campanhas` só lista o que entregou no período. Campanha pausada antes
+  // do período (Showa, pausada pelo Pedro em 07/10) não aparece lá; esta
+  // lista dá o estado de TODAS as campanhas não arquivadas da conta, sem as
+  // excluídas da workspace. null = a Meta não devolveu as campanhas.
+  const campanhasStatus: CoreCampanhaStatus[] | null = campRows
+    ? campRows
+        .filter((c) => {
+          const id = String(c.id ?? "").trim();
+          const st = String(c.effective_status ?? "");
+          if (!id || st === "ARCHIVED" || st === "DELETED") return false;
+          return !(excluidasCore.size > 0 && excluidasCore.has(chaveCampanha(id)));
+        })
+        .map((c) => {
+          const id = String(c.id).trim();
+          const o = orcCampanha.get(id);
+          return {
+            campaign_id: id,
+            campaign_name: o?.name ?? null,
+            daily_budget: o?.daily ?? null,
+            lifetime_budget: o?.lifetime ?? null,
+            effective_status: o?.effective_status ?? null,
+            configured_status: o?.configured_status ?? null,
+            updated_time: o?.updated_time ?? null,
+          };
+        })
+    : null;
 
   const total = porAnuncio.reduce(
     (acc, a) => ({
@@ -1234,8 +1649,10 @@ export async function getMetaInsightsForCore(
       video_plays: acc.video_plays + a.video_plays,
       video_views_3s: acc.video_views_3s + a.video_views_3s,
       video_p75: acc.video_p75 + a.video_p75,
+      conversas_iniciadas: acc.conversas_iniciadas + a.conversas_iniciadas,
     }),
     {
+      conversas_iniciadas: 0,
       spend: 0,
       impressions: 0,
       clicks: 0,
@@ -1270,12 +1687,19 @@ export async function getMetaInsightsForCore(
       video_ret_body:
         total.video_plays > 0 ? round2((total.video_p75 / total.video_plays) * 100) : null,
       por_plataforma: porPlataformaTotal,
+      conversas_iniciadas: total.conversas_iniciadas,
+      custo_por_conversa:
+        total.conversas_iniciadas > 0 ? round2(total.spend / total.conversas_iniciadas) : null,
     },
     por_anuncio: porAnuncio.sort((a, b) => b.spend - a.spend),
     campanhas,
     stale: false,
     fetched_at: new Date().toISOString(),
     conta,
+    campanhas_status: campanhasStatus,
+    atividades,
+    recortes,
+    parcial,
   };
 
   coreCache.set(cacheKey, { ts: now, data });
