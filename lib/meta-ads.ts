@@ -987,6 +987,33 @@ export type CoreMetaInsights = {
   /** Estado de todas as campanhas não arquivadas da conta (sem as excluídas),
    *  inclusive as que não entregaram no período. */
   campanhas_status?: CoreCampanhaStatus[] | null;
+  /** Entrega dia a dia: 7 dias completos até ontem + hoje (parcial_dia),
+   *  fixo, não segue days/until. null = a Meta não respondeu. */
+  entrega_diaria?: CoreEntregaCampanha[] | null;
+};
+
+export type CoreEntregaDia = {
+  data: string;
+  parcial_dia: boolean;
+  spend: number;
+  impressions: number;
+  reach: number;
+  frequency: number | null;
+  cpm: number | null;
+  link_clicks: number;
+  conversas_iniciadas: number;
+  leads_formulario: number;
+  anuncios_com_entrega: number | null;
+};
+
+export type CoreEntregaCampanha = {
+  campaign_id: string;
+  campaign_name: string | null;
+  effective_status: string | null;
+  /** Do CBO, ou a soma dos conjuntos que podem entregar (ACTIVE,
+   *  WITH_ISSUES…). Em reais. null = só orçamento vitalício. */
+  daily_budget: number | null;
+  dias: CoreEntregaDia[];
 };
 
 type CoreStatusObj = {
@@ -1350,6 +1377,32 @@ export async function getMetaInsightsForCore(
     recorte("age,gender"),
   ]);
 
+  // ── Entrega diária (09/10/2026, pedido do Core para o Pulso enxergar
+  // queda de entrega). Janela FIXA: 7 dias completos até ontem + hoje
+  // parcial, independente de days/until. Datas no fuso de São Paulo (todas
+  // as contas mapeadas são BRL/Brasil); a Meta devolve date_start no fuso da
+  // conta. Duas chamadas: campanha × dia e anúncio × dia (só para contar
+  // anúncios com impressão no dia; o filtro impressions > 0 corta o resto).
+  const hojeSP = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+  const diasEntrega: string[] = [];
+  for (let i = 7; i >= 0; i--) {
+    const d = new Date(`${hojeSP}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - i);
+    diasEntrega.push(d.toISOString().slice(0, 10));
+  }
+  const janelaEntrega = encodeURIComponent(JSON.stringify({ since: diasEntrega[0], until: hojeSP }));
+  const entregaP = Promise.all([
+    coreGetPages(
+      `${base}/insights?level=campaign&time_range=${janelaEntrega}&time_increment=1` +
+        `&fields=campaign_id,campaign_name,spend,impressions,reach,frequency,cpm,inline_link_clicks,actions&limit=500&${tokenParam}`,
+    ),
+    coreGetPages(
+      `${base}/insights?level=ad&time_range=${janelaEntrega}&time_increment=1` +
+        `&filtering=${encodeURIComponent(JSON.stringify([{ field: "impressions", operator: "GREATER_THAN", value: 0 }]))}` +
+        `&fields=ad_id,campaign_id,impressions&limit=500&${tokenParam}`,
+    ),
+  ]);
+
   // Miniaturas (best-effort, mesmo buscador do dash): falha vira null — a
   // tabela do Pulso degrada pro placeholder, nunca derruba o dado de custo.
   // A mesma chamada traz miniatura E o sinal de formulário-no-WhatsApp.
@@ -1389,9 +1442,12 @@ export async function getMetaInsightsForCore(
     };
   }
   const [adsInfo, atvRes, regRes, posRes, ageRes] = await novosP;
+  const [entCampRes, entAdRes] = await entregaP;
   // parcial = faltou algo complementar, por limite de taxa (código 17 e
   // afins) ou por falha/timeout. O campo que faltou vem null.
-  const parcial = [adsInfo, atvRes, regRes, posRes, ageRes].some((r) => r.limite || r.data === null);
+  const parcial = [adsInfo, atvRes, regRes, posRes, ageRes, entCampRes, entAdRes].some(
+    (r) => r.limite || r.data === null,
+  );
 
   // Status e texto do criativo por anúncio.
   for (const a of porAnuncio) {
@@ -1642,6 +1698,79 @@ export async function getMetaInsightsForCore(
         })
     : null;
 
+  // Entrega diária: campanhas ACTIVE ou que gastaram na janela, sem as
+  // excluídas. Dia sem linha da Meta = sem entrega (a Meta omite zero), então
+  // vira zeros; cpm/frequency ficam null sem impressão (não há o que dividir).
+  let entregaDiaria: CoreEntregaCampanha[] | null = null;
+  if (entCampRes.data) {
+    const fora = (id: string) => excluidasCore.size > 0 && excluidasCore.has(chaveCampanha(id));
+    const linhasPorCamp = new Map<string, Map<string, Record<string, unknown>>>();
+    const nomeCamp = new Map<string, string>();
+    for (const r of entCampRes.data) {
+      const id = String(r.campaign_id ?? "").trim();
+      if (!id || fora(id)) continue;
+      nomeCamp.set(id, String(r.campaign_name ?? ""));
+      const m = linhasPorCamp.get(id) ?? new Map();
+      m.set(String(r.date_start ?? ""), r);
+      linhasPorCamp.set(id, m);
+    }
+    // anúncios com impressão por campanha × dia
+    const adsDia = new Map<string, Set<string>>();
+    for (const r of entAdRes.data ?? []) {
+      if (num(r.impressions) <= 0) continue;
+      const k = `${r.campaign_id}|${r.date_start}`;
+      const s = adsDia.get(k) ?? new Set<string>();
+      s.add(String(r.ad_id));
+      adsDia.set(k, s);
+    }
+    // orçamento diário: o da campanha (CBO) ou a soma dos conjuntos que
+    // podem entregar. WITH_ISSUES entra: entrega com alerta da Meta (EMIVE
+    // "Chachoeiro", 09/10: único conjunto ativo estava assim).
+    const ENTREGAVEL = new Set(["ACTIVE", "WITH_ISSUES", "IN_PROCESS", "PENDING_REVIEW", "PREAPPROVED"]);
+    const somaConjuntos = new Map<string, number>();
+    for (const s of adsetRows ?? []) {
+      if (!ENTREGAVEL.has(String(s.effective_status ?? ""))) continue;
+      const v = budgetToMajor(s.daily_budget);
+      if (v === null) continue;
+      const c = String(s.campaign_id ?? "");
+      somaConjuntos.set(c, round2c((somaConjuntos.get(c) ?? 0) + v));
+    }
+    const ids = new Set<string>(linhasPorCamp.keys());
+    for (const [id, o] of orcCampanha) {
+      if ((o.effective_status === "ACTIVE" || o.effective_status === "WITH_ISSUES") && !fora(id)) ids.add(id);
+    }
+    entregaDiaria = [...ids].map((id) => {
+      const o = orcCampanha.get(id);
+      const linhas = linhasPorCamp.get(id);
+      return {
+        campaign_id: id,
+        campaign_name: o?.name ?? nomeCamp.get(id) ?? null,
+        effective_status: o?.effective_status ?? null,
+        daily_budget: o?.daily ?? somaConjuntos.get(id) ?? null,
+        dias: diasEntrega.map((data) => {
+          const r = linhas?.get(data);
+          const imp = r ? num(r.impressions) : 0;
+          return {
+            data,
+            parcial_dia: data === hojeSP,
+            spend: r ? round2c(num(r.spend)) : 0,
+            impressions: imp,
+            reach: r ? num(r.reach) : 0,
+            frequency: imp > 0 ? round2c(num(r!.frequency)) : null,
+            cpm: imp > 0 ? round2c(num(r!.cpm)) : null,
+            link_clicks: r ? num(r.inline_link_clicks) : 0,
+            conversas_iniciadas: r ? pickActionType(r.actions, ACAO_CONVERSA) : 0,
+            leads_formulario: r ? pickCoreLead(r.actions as Array<{ action_type?: string; value?: string }>) ?? 0 : 0,
+            // null = a chamada por anúncio falhou (não sei), não "zero anúncios"
+            anuncios_com_entrega: entAdRes.data ? adsDia.get(`${id}|${data}`)?.size ?? 0 : null,
+          };
+        }),
+      };
+    });
+    const gasto = (c: CoreEntregaCampanha) => c.dias.reduce((s, d) => s + d.spend, 0);
+    entregaDiaria.sort((a, b) => gasto(b) - gasto(a));
+  }
+
   const total = porAnuncio.reduce(
     (acc, a) => ({
       spend: acc.spend + a.spend,
@@ -1703,6 +1832,7 @@ export async function getMetaInsightsForCore(
     atividades,
     recortes,
     parcial,
+    entrega_diaria: entregaDiaria,
   };
 
   coreCache.set(cacheKey, { ts: now, data });
