@@ -1418,7 +1418,10 @@ export async function getMetaInsightsForCore(
       let extra: unknown = e.extra_data ?? null;
       if (typeof extra === "string") {
         try {
-          extra = JSON.parse(extra);
+          // IDs da Meta passam de 2^53: como número, o campaign_id perde os
+          // últimos dígitos (…110605 vira …110610) e o filtro de exclusão
+          // erra. Inteiros de 16+ dígitos viram string antes do parse.
+          extra = JSON.parse(extra.replace(/(:\s*)(\d{16,})(?=\s*[,}\]])/g, '$1"$2"'));
         } catch {
           /* fica a string crua */
         }
