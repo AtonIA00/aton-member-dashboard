@@ -5,6 +5,9 @@ import {
   addExclusion,
   isLeadExcludeAllowed,
   listExclusions,
+  LOTE_MAX,
+  marcarLote,
+  MOTIVO_IMPLANTACAO,
   removeExclusion,
 } from "@/lib/lead-exclusions";
 
@@ -63,6 +66,43 @@ export async function POST(req: NextRequest) {
     signature: typeof body.signature === "string" ? body.signature : undefined,
   });
   if (auth instanceof NextResponse) return auth;
+
+  // Lote: { action: 'bulk_exclude', lead_ids: number[] } OU { action:
+  // 'bulk_exclude', ate: 'AAAA-MM-DD' } (todos os leads da workspace com data
+  // até o dia). Sem confirmar=true só devolve a conferência (quantos vai
+  // marcar, quantos já estão); com confirmar=true grava. A workspace é a do
+  // HMAC, nunca do corpo. Motivo fixo "teste de implantação".
+  if (body.action === "bulk_exclude") {
+    let criterio: { leadIds: number[] } | { ate: string };
+    if (Array.isArray(body.lead_ids)) {
+      const ids = body.lead_ids.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+      if (ids.length === 0 || ids.length !== body.lead_ids.length) {
+        return NextResponse.json({ error: "invalid_lead_ids" }, { status: 400 });
+      }
+      if (ids.length > LOTE_MAX) {
+        return NextResponse.json({ error: "too_many", limite: LOTE_MAX }, { status: 400 });
+      }
+      criterio = { leadIds: ids };
+    } else if (typeof body.ate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.ate)) {
+      if (Number.isNaN(Date.parse(`${body.ate}T00:00:00Z`))) {
+        return NextResponse.json({ error: "invalid_ate" }, { status: 400 });
+      }
+      criterio = { ate: body.ate };
+    } else {
+      return NextResponse.json({ error: "missing_lead_ids_or_ate" }, { status: 400 });
+    }
+
+    const confirmar = body.confirmar === true;
+    const r = await marcarLote({ workspaceId: auth.workspaceId, userId: auth.userId, criterio, confirmar });
+    if (!r) return NextResponse.json({ error: "db_error" }, { status: 500 });
+    if (r.acima_do_limite) {
+      return NextResponse.json({ error: "too_many", limite: LOTE_MAX, ...r }, { status: 400 });
+    }
+    if (confirmar && r.gravados < r.a_marcar) {
+      return NextResponse.json({ error: "db_error_parcial", ...r }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, action: "bulk_exclude", confirmado: confirmar, motivo: MOTIVO_IMPLANTACAO, ...r });
+  }
 
   const leadId = Number(body.lead_id);
   if (!Number.isFinite(leadId) || leadId <= 0) {
