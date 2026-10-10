@@ -10,6 +10,7 @@ import {
   type ExportMeta,
 } from "@/lib/export-leads";
 import { useTableDrilldown, type DrilldownField } from "@/lib/use-table-drilldown";
+import { BulkTesteModal } from "./BulkTesteModal";
 
 type HmacParams = {
   workspace_id: string;
@@ -150,6 +151,10 @@ export function LeadsTable({
   const [undo, setUndo] = useState<{ leadId: number; nome: string } | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
   const [exclusions, setExclusions] = useState<ExclusionRow[]>([]);
+  // Marcação em lote (teste de implantação): seleção múltipla + modal.
+  const [selecionados, setSelecionados] = useState<Set<number>>(() => new Set());
+  const [lote, setLote] = useState<null | { modo: "ate" } | { modo: "ids"; ids: number[] }>(null);
+  const [loteFeito, setLoteFeito] = useState<number | null>(null);
 
   const hmacQS = useMemo(() => {
     const p = new URLSearchParams();
@@ -232,10 +237,72 @@ export function LeadsTable({
 
   const excludedCount = exclusions.length;
 
+  // Seleção só de quem ainda está na lista (o refresh tira os já marcados).
+  useEffect(() => {
+    setSelecionados((prev) => {
+      if (prev.size === 0) return prev;
+      const vivos = new Set(leads.map((l) => l.id));
+      const next = new Set([...prev].filter((id) => vivos.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [leads]);
+
+  useEffect(() => {
+    if (loteFeito === null) return;
+    const t = setTimeout(() => setLoteFeito(null), 8000);
+    return () => clearTimeout(t);
+  }, [loteFeito]);
+
+  function alternar(id: number) {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  const paginaToda = slice.length > 0 && slice.every((l) => selecionados.has(l.id));
+  function alternarPagina() {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      for (const l of slice) {
+        if (paginaToda) next.delete(l.id);
+        else next.add(l.id);
+      }
+      return next;
+    });
+  }
+
+  const modalLote = canExclude && lote && (
+    <BulkTesteModal
+      modo={lote.modo}
+      leadIds={lote.modo === "ids" ? lote.ids : undefined}
+      hmac={hmac}
+      onClose={() => setLote(null)}
+      onDone={(gravados) => {
+        setLote(null);
+        setSelecionados(new Set());
+        setLoteFeito(gravados);
+        router.refresh();
+        refreshExclusions();
+      }}
+    />
+  );
+
   if (leads.length === 0) {
     return (
       <div className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color:var(--card)]/70 p-6 text-center text-sm text-[color:var(--muted-foreground)] backdrop-blur">
         <div>Nenhum lead no período selecionado.</div>
+        {canExclude && (
+          <button
+            type="button"
+            onClick={() => setLote({ modo: "ate" })}
+            className="mt-3 block w-full text-[11px] font-medium text-[color:var(--muted-foreground)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--foreground)]"
+          >
+            Marcar como teste até…
+          </button>
+        )}
+        {modalLote}
         {canExclude && excludedCount > 0 && (
           <button
             type="button"
@@ -286,11 +353,55 @@ export function LeadsTable({
             {excludedCount} {excludedCount === 1 ? "oculto" : "ocultos"} · gerenciar
           </button>
         )}
+        {canExclude && (
+          <button
+            type="button"
+            onClick={() => setLote({ modo: "ate" })}
+            className="text-[11px] font-medium text-[color:var(--muted-foreground)] underline decoration-dotted underline-offset-2 transition-colors hover:text-[color:var(--foreground)]"
+            title="Marcar como teste todos os leads até uma data (fim da implantação)"
+          >
+            Marcar como teste até…
+          </button>
+        )}
         <ExportMenu
           leads={filtered}
           meta={{ workspaceName, periodLabel, filtersActive: filtersActive || filtered.length !== leads.length }}
         />
       </div>
+
+      {modalLote}
+
+      {canExclude && selecionados.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-[color:var(--border)] bg-[color:var(--primary)]/5 px-6 py-2 text-[12px] text-[color:var(--foreground)]">
+          <span>
+            <strong className="font-semibold">{selecionados.size.toLocaleString("pt-BR")}</strong>{" "}
+            {selecionados.size === 1 ? "selecionado" : "selecionados"}
+          </span>
+          <button
+            type="button"
+            onClick={() => setLote({ modo: "ids", ids: [...selecionados] })}
+            className="rounded-md bg-[color:var(--destructive)] px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90"
+          >
+            Marcar selecionados como teste
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelecionados(new Set())}
+            className="text-[11px] text-[color:var(--muted-foreground)] underline underline-offset-2 hover:text-[color:var(--foreground)]"
+          >
+            limpar seleção
+          </button>
+        </div>
+      )}
+
+      {canExclude && loteFeito !== null && (
+        <div className="border-b border-[color:var(--border)] bg-[color:var(--surface-2)]/60 px-6 py-2 text-[12px] text-[color:var(--muted-foreground)]">
+          <strong className="font-semibold text-[color:var(--foreground)]">
+            {loteFeito.toLocaleString("pt-BR")} {loteFeito === 1 ? "lead marcado" : "leads marcados"}
+          </strong>{" "}
+          como teste de implantação. Para desfazer, use “gerenciar”.
+        </div>
+      )}
 
       {canExclude && undo && (
         <UndoBar
@@ -320,6 +431,17 @@ export function LeadsTable({
         <table className="w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-[color:var(--card)]">
             <tr>
+              {canExclude && (
+                <th scope="col" className="w-8 py-3 pl-4">
+                  <input
+                    type="checkbox"
+                    checked={paginaToda}
+                    onChange={alternarPagina}
+                    aria-label="Selecionar os leads desta página"
+                    className="h-3.5 w-3.5 cursor-pointer accent-[color:var(--primary)]"
+                  />
+                </th>
+              )}
               <Th>ID</Th>
               <Th>Data</Th>
               <Th>Campanha</Th>
@@ -344,6 +466,17 @@ export function LeadsTable({
                   key={l.id}
                   className="group border-t border-[color:var(--border)]/60 align-top transition-colors hover:bg-[color:var(--primary)]/5"
                 >
+                  {canExclude && (
+                    <td className="py-3 pl-4 align-middle">
+                      <input
+                        type="checkbox"
+                        checked={selecionados.has(l.id)}
+                        onChange={() => alternar(l.id)}
+                        aria-label={`Selecionar ${l.nome_lead?.trim() || "lead " + l.id}`}
+                        className="h-3.5 w-3.5 cursor-pointer accent-[color:var(--primary)]"
+                      />
+                    </td>
+                  )}
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-[color:var(--muted-foreground)] tabular-nums">
                     {l.id}
                   </td>
