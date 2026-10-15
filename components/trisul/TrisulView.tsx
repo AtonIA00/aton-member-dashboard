@@ -150,6 +150,7 @@ export async function TrisulView({
                 atendimentos={data.atendimentos}
                 periodLabel={periodLabel}
                 filtersActive={filtersActive}
+                hmac={hmac}
               />
             </div>
           </>

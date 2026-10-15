@@ -1,17 +1,49 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { TrisulAtendimento } from "@/lib/trisul";
 import { exportTrisulCsv, exportTrisulXlsx, type TrisulExportMeta } from "@/lib/export-trisul";
 import { useTableDrilldown, type DrilldownField } from "@/lib/use-table-drilldown";
+import {
+  aguardaCoordenador,
+  ehParceiro,
+  pendenteDirecionamento,
+} from "@/lib/trisul-direcionamento";
+import { TrisulDetailPanel, fmtDataHora } from "./TrisulDetailPanel";
+
+type HmacParams = {
+  workspace_id: string;
+  user_id: string;
+  timestamp: string;
+  signature: string;
+  user_name?: string;
+};
 
 type Props = {
   atendimentos: TrisulAtendimento[];
   periodLabel: string;
   filtersActive: boolean;
+  hmac: HmacParams;
 };
 
 const PAGE_SIZE = 50;
+
+const RESULTADO_OPTIONS = [
+  { value: "confirmado_atualizado", label: "Confirmado/Ativo" },
+  { value: "nao_atua_mercado", label: "Não atua no mercado" },
+  { value: "nao_atua_parcerias", label: "Não atua com parcerias" },
+  { value: "negativa_explicita", label: "Negativa explícita" },
+  { value: "sem_interacao", label: "Sem interação" },
+  { value: "em_andamento", label: "Em andamento" },
+];
+function resultadoKey(a: TrisulAtendimento): string {
+  return a.resultado && a.resultado.trim() ? a.resultado.trim() : "em_andamento";
+}
+function resultadoLabel(a: TrisulAtendimento): string {
+  const k = resultadoKey(a);
+  return RESULTADO_OPTIONS.find((o) => o.value === k)?.label ?? k;
+}
 
 // Filtro local da tabela (drill-down) — dataset inteiro, antes da paginação.
 const TRISUL_TABLE_FIELDS: DrilldownField<TrisulAtendimento>[] = [
@@ -19,14 +51,34 @@ const TRISUL_TABLE_FIELDS: DrilldownField<TrisulAtendimento>[] = [
     key: "resultado",
     label: "Resultado",
     allLabel: "Todos",
-    get: (a) => (a.resultado && a.resultado.trim() ? a.resultado : "em_andamento"),
+    get: resultadoKey,
+    options: RESULTADO_OPTIONS,
+  },
+  {
+    key: "parceiro",
+    label: "É parceiro",
+    allLabel: "Todos",
+    get: (a) => ehParceiro(a),
     options: [
-      { value: "confirmado_atualizado", label: "Confirmado/Ativo" },
-      { value: "nao_atua_mercado", label: "Não atua no mercado" },
-      { value: "nao_atua_parcerias", label: "Não atua com parcerias" },
-      { value: "negativa_explicita", label: "Negativa explícita" },
-      { value: "sem_interacao", label: "Sem interação" },
-      { value: "em_andamento", label: "Em andamento" },
+      { value: "sim", label: "É parceiro: Sim" },
+      { value: "nao", label: "É parceiro: Não" },
+    ],
+  },
+  {
+    key: "aguarda",
+    label: "Aguarda coordenador",
+    allLabel: "Todos",
+    get: (a) => (aguardaCoordenador(a) ? "sim" : ""),
+    options: [{ value: "sim", label: "Aguarda coordenador: Sim" }],
+  },
+  {
+    key: "direcionamento",
+    label: "Direcionamento",
+    allLabel: "Todos",
+    get: (a) => (a.direcionado_em ? "direcionado" : pendenteDirecionamento(a) ? "pendente" : ""),
+    options: [
+      { value: "pendente", label: "Pendentes" },
+      { value: "direcionado", label: "Direcionados" },
     ],
   },
   { key: "campanha", label: "Campanha", allLabel: "Todas", get: (a) => a.campanha ?? "" },
@@ -67,13 +119,94 @@ function resultadoChip(r: string | null, convertido: boolean | null): { label: s
   return { label: "Em andamento", cls: "border-[color:var(--primary)]/40 bg-[color:var(--primary)]/10 text-[color:var(--primary)]" };
 }
 
-export function TrisulTable({ atendimentos, periodLabel, filtersActive }: Props) {
+type DirecionamentoPatch = Pick<TrisulAtendimento, "direcionado_em" | "direcionado_para" | "direcionado_por">;
+
+const EMPTY = <span className="text-[color:var(--muted-foreground)]/60">—</span>;
+
+export function TrisulTable({ atendimentos, periodLabel, filtersActive, hmac }: Props) {
+  const router = useRouter();
+  // Atualização otimista do direcionamento: sobrepõe as linhas que vieram do
+  // servidor até o router.refresh() trazer o valor gravado.
+  const [overrides, setOverrides] = useState<Record<string, DirecionamentoPatch>>({});
+  const rows = useMemo(
+    () =>
+      Object.keys(overrides).length === 0
+        ? atendimentos
+        : atendimentos.map((a) => (overrides[a.id] ? { ...a, ...overrides[a.id] } : a)),
+    [atendimentos, overrides],
+  );
+
   // Filtro local (drill-down) sobre o dataset inteiro, ANTES da paginação.
-  const { filtered, bar } = useTableDrilldown(atendimentos, TRISUL_TABLE_FIELDS);
+  const { filtered, bar, selected, select } = useTableDrilldown(rows, TRISUL_TABLE_FIELDS);
   const [page, setPage] = useState(0);
   const totalPages = useMemo(() => Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)), [filtered.length]);
   const safePage = Math.min(page, totalPages - 1);
   const slice = useMemo(() => filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE), [filtered, safePage]);
+
+  const pendentes = useMemo(() => rows.filter(pendenteDirecionamento).length, [rows]);
+  const filtrandoPendentes = selected.direcionamento === "pendente";
+
+  const [openId, setOpenId] = useState<string | null>(null);
+  const openRow = useMemo(() => (openId ? rows.find((a) => a.id === openId) ?? null : null), [rows, openId]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const direcionar = useCallback(
+    async (a: TrisulAtendimento, direcionado: boolean, paraIn: string) => {
+      const para = paraIn.trim();
+      const anterior: DirecionamentoPatch = {
+        direcionado_em: a.direcionado_em,
+        direcionado_para: a.direcionado_para,
+        direcionado_por: a.direcionado_por,
+      };
+      const otimista: DirecionamentoPatch = direcionado
+        ? {
+            direcionado_em: new Date().toISOString(),
+            direcionado_para: para || null,
+            direcionado_por: hmac.user_name?.trim() || "você",
+          }
+        : { direcionado_em: null, direcionado_para: null, direcionado_por: null };
+      setErro(null);
+      setBusyId(a.id);
+      setOverrides((o) => ({ ...o, [a.id]: otimista }));
+      try {
+        const res = await fetch("/api/trisul/direcionar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: a.id,
+            direcionado,
+            para,
+            workspace_id: hmac.workspace_id,
+            user_id: hmac.user_id,
+            timestamp: hmac.timestamp,
+            signature: hmac.signature,
+            user_name: hmac.user_name,
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = (await res.json()) as { row?: DirecionamentoPatch };
+        if (json.row) {
+          const salvo: DirecionamentoPatch = {
+            direcionado_em: json.row.direcionado_em,
+            direcionado_para: json.row.direcionado_para,
+            direcionado_por: json.row.direcionado_por,
+          };
+          setOverrides((o) => ({ ...o, [a.id]: salvo }));
+        }
+        router.refresh();
+      } catch (e) {
+        console.error("[trisul] direcionar", e);
+        setOverrides((o) => ({ ...o, [a.id]: anterior }));
+        const msg = "Não foi possível salvar agora. Recarregue o painel e tente de novo.";
+        setErro(msg);
+        if (!openId) alert(msg);
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [hmac, router, openId],
+  );
 
   if (atendimentos.length === 0) {
     return (
@@ -100,6 +233,36 @@ export function TrisulTable({ atendimentos, periodLabel, filtersActive }: Props)
         <ExportMenu atendimentos={filtered} meta={{ periodLabel, filtersActive: filtersActive || filtered.length !== atendimentos.length }} />
       </div>
 
+      <div className="flex flex-wrap items-center gap-3 border-b border-[color:var(--border)] px-6 py-3">
+        <button
+          type="button"
+          onClick={() => {
+            select("direcionamento", filtrandoPendentes ? "" : "pendente");
+            setPage(0);
+          }}
+          aria-pressed={filtrandoPendentes}
+          className={
+            "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors " +
+            (pendentes > 0
+              ? "border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300"
+              : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300")
+          }
+        >
+          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-current" />
+          {pendentes === 0
+            ? "Nenhum parceiro pendente de direcionamento"
+            : `${pendentes.toLocaleString("pt-BR")} ${pendentes === 1 ? "parceiro pendente" : "parceiros pendentes"} de direcionamento`}
+          {pendentes > 0 && (
+            <span className="font-normal underline decoration-dotted underline-offset-2">
+              {filtrandoPendentes ? "mostrar todos" : "ver pendentes"}
+            </span>
+          )}
+        </button>
+        <span className="text-[11px] text-[color:var(--muted-foreground)]">
+          Clique em uma linha para ver o resumo da conversa e direcionar o parceiro.
+        </span>
+      </div>
+
       {bar}
 
       {filtered.length === 0 ? (
@@ -113,38 +276,89 @@ export function TrisulTable({ atendimentos, periodLabel, filtersActive }: Props)
           <thead className="sticky top-0 z-10 bg-[color:var(--card)]">
             <tr>
               <Th>Disparo</Th>
+              <Th>FAC ID</Th>
               <Th>Nome</Th>
-              <Th>Coordenador</Th>
-              <Th>Campanha</Th>
-              <Th align="center">Envio</Th>
-              <Th align="center">FUP</Th>
-              <Th>Resultado</Th>
+              <Th>E-mail</Th>
               <Th>Telefone</Th>
+              <Th align="center">É parceiro</Th>
+              <Th>Resultado</Th>
+              <Th>Coordenador base anterior</Th>
+              <Th>Gerente base anterior</Th>
+              <Th align="center">Aguarda coordenador</Th>
+              <Th align="center">Direcionado</Th>
             </tr>
           </thead>
           <tbody>
             {slice.map((a) => {
               const chip = resultadoChip(a.resultado, a.convertido);
+              const parceiro = ehParceiro(a);
+              const aguarda = aguardaCoordenador(a);
+              const direcionado = Boolean(a.direcionado_em);
               return (
-                <tr key={a.id} className="border-t border-[color:var(--border)]/60 align-top transition-colors hover:bg-[color:var(--primary)]/5">
+                <tr
+                  key={a.id}
+                  onClick={() => {
+                    setErro(null);
+                    setOpenId(a.id);
+                  }}
+                  className="cursor-pointer border-t border-[color:var(--border)]/60 align-top transition-colors hover:bg-[color:var(--primary)]/5"
+                >
                   <td className="whitespace-nowrap px-4 py-3 text-xs text-[color:var(--muted-foreground)] tabular-nums">{fmtDateTime(a.disparo_at)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-[color:var(--muted-foreground)]">{a.partner_id ?? "—"}</td>
                   <td className="max-w-[180px] truncate px-4 py-3 text-sm font-medium text-[color:var(--foreground)]">
-                    {a.nome ?? <span className="text-[color:var(--muted-foreground)]/60">—</span>}
+                    {a.nome ?? EMPTY}
                   </td>
-                  <td className="max-w-[160px] truncate px-4 py-3 text-xs text-[color:var(--foreground)]/90">
-                    {a.coordenador_nome ?? <span className="text-[color:var(--muted-foreground)]/60">—</span>}
+                  <td className="max-w-[200px] truncate px-4 py-3 text-xs text-[color:var(--foreground)]/90">
+                    {a.email ?? EMPTY}
                   </td>
-                  <td className="max-w-[140px] truncate px-4 py-3 text-xs text-[color:var(--foreground)]/90">
-                    {a.campanha ?? <span className="text-[color:var(--muted-foreground)]/60">—</span>}
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-[color:var(--muted-foreground)]">{a.telefone ?? "—"}</td>
+                  <td className="px-4 py-3 text-center text-xs font-semibold">
+                    {parceiro === "sim" ? (
+                      <span className="text-emerald-700 dark:text-emerald-300">Sim</span>
+                    ) : parceiro === "nao" ? (
+                      <span className="text-[color:var(--muted-foreground)]">Não</span>
+                    ) : (
+                      EMPTY
+                    )}
                   </td>
-                  <td className="px-4 py-3 text-center text-xs text-[color:var(--muted-foreground)]">{a.status_envio ?? "—"}</td>
-                  <td className="px-4 py-3 text-center text-xs tabular-nums text-[color:var(--muted-foreground)]">{a.tentativas_fup ?? 0}</td>
                   <td className="px-4 py-3">
                     <span className={"inline-block whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide " + chip.cls}>
                       {chip.label}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-[color:var(--muted-foreground)]">{a.telefone ?? "—"}</td>
+                  <td className="max-w-[160px] truncate px-4 py-3 text-xs text-[color:var(--foreground)]/90">
+                    {a.coordenador_nome ?? EMPTY}
+                  </td>
+                  <td className="max-w-[160px] truncate px-4 py-3 text-xs text-[color:var(--foreground)]/90">
+                    {a.gerente_nome ?? EMPTY}
+                  </td>
+                  <td className="px-4 py-3 text-center text-xs font-semibold">
+                    {aguarda ? <span className="text-amber-700 dark:text-amber-300">Sim</span> : EMPTY}
+                  </td>
+                  <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                    <label
+                      className="inline-flex cursor-pointer items-center gap-1.5"
+                      title={
+                        direcionado
+                          ? `Direcionado para ${a.direcionado_para || "coordenador"} em ${fmtDataHora(a.direcionado_em)}${a.direcionado_por ? ` por ${a.direcionado_por}` : ""}`
+                          : "Marcar como direcionado para o coordenador da base anterior"
+                      }
+                    >
+                      <input
+                        type="checkbox"
+                        checked={direcionado}
+                        disabled={busyId === a.id}
+                        onChange={(e) => void direcionar(a, e.target.checked, a.coordenador_nome ?? "")}
+                        aria-label={`Direcionado: ${a.nome ?? "parceiro"}`}
+                        className="h-4 w-4 cursor-pointer accent-[color:var(--primary)] disabled:opacity-50"
+                      />
+                      {direcionado && (
+                        <span className="whitespace-nowrap text-[10px] tabular-nums text-[color:var(--muted-foreground)]">
+                          {fmtDataHora(a.direcionado_em)}
+                        </span>
+                      )}
+                    </label>
+                  </td>
                 </tr>
               );
             })}
@@ -167,6 +381,18 @@ export function TrisulTable({ atendimentos, periodLabel, filtersActive }: Props)
             </div>
           )}
         </>
+      )}
+
+      {openRow && (
+        <TrisulDetailPanel
+          key={openRow.id}
+          atendimento={openRow}
+          resultadoLabel={resultadoLabel(openRow)}
+          busy={busyId === openRow.id}
+          erro={erro}
+          onClose={() => setOpenId(null)}
+          onDirecionar={(dir, para) => void direcionar(openRow, dir, para)}
+        />
       )}
     </div>
   );
