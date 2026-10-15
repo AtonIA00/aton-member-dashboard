@@ -30,6 +30,14 @@ export const STATUS_OPTIONS: { grupo: Grupo; label: string; value: string }[] = 
   // Label "Convertido" a pedido do Murillo (UI não mostra "Agendado"); value
   // segue "Agendado" — é o que grava no banco e o que classify() reconhece.
   { grupo: "Agendado+", label: "Convertido", value: "Agendado" },
+  // Etapas do SDR do assinante (WDS, 15/10/2026): o agente passa o lead ao
+  // SDR humano ("Com SDR"), que confirma a presença ("Confirmado") e reagenda
+  // o no-show ("Reagendamento") antes da visita ("Visita Feita"). Todas vêm
+  // depois da conversão, então ficam no Convertido: o lead que cai em
+  // "Reagendamento" continua convertido, só ainda não visitou.
+  { grupo: "Agendado+", label: "Com SDR", value: "Com SDR" },
+  { grupo: "Agendado+", label: "Confirmado", value: "Confirmado" },
+  { grupo: "Agendado+", label: "Reagendamento", value: "Reagendamento" },
   { grupo: "Agendado+", label: "Especialista", value: "Especialista" },
   { grupo: "Agendado+", label: "Negociação", value: "Negociacao" },
   { grupo: "Agendado+", label: "Financeiro", value: "Financeiro" },
@@ -48,6 +56,9 @@ export const STATUS_OPTIONS: { grupo: Grupo; label: string; value: string }[] = 
 
 const SET_AGENDADO_PLUS = new Set([
   "agendado",
+  "com sdr",
+  "confirmado",
+  "reagendamento",
   "especialista",
   "negociacao",
   "financeiro",
