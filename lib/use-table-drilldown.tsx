@@ -27,6 +27,10 @@ export type DrilldownField<T> = {
 export function useTableDrilldown<T>(rows: T[], fields: DrilldownField<T>[]): {
   filtered: T[];
   bar: ReactNode;
+  /** Valores selecionados por campo ("" ou ausente = todos). */
+  selected: Record<string, string>;
+  /** Define o filtro de um campo por fora da barra (atalhos). "" limpa. */
+  select: (key: string, value: string) => void;
 } {
   const [selected, setSelected] = useState<Record<string, string>>({});
 
@@ -86,5 +90,8 @@ export function useTableDrilldown<T>(rows: T[], fields: DrilldownField<T>[]): {
     </div>
   );
 
-  return { filtered, bar };
+  const select = (key: string, value: string) =>
+    setSelected((s) => ({ ...s, [key]: value }));
+
+  return { filtered, bar, selected, select };
 }

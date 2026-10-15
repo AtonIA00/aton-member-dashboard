@@ -11,7 +11,11 @@ import { computeDelta, type Delta } from "./deltas";
 // por dia BRT × campanha × coordenador) e trisul_atendimentos (cru, pra tabela
 // detalhada). As TAXAS são computadas em TS a partir das somas do recorte —
 // necessário pra respeitar o período/filtros (a view resumo é só all-time).
-// SOMENTE LEITURA.
+// SOMENTE LEITURA aqui. A ÚNICA escrita permitida no painel é a marcação de
+// direcionamento (direcionado_em / direcionado_para / direcionado_por em
+// trisul_atendimentos), feita só por app/api/trisul/direcionar/route.ts.
+// fetchAtendimentos não tem cache (a página é force-dynamic), então um
+// router.refresh() depois da escrita já traz o valor novo.
 
 // ── Config / gate ──────────────────────────────────────────────────────────
 // workspace_id da Trisul (identidade HMAC/acesso). Env pra ajustar sem deploy.
@@ -58,7 +62,13 @@ export type TrisulAtendimento = {
   partner_id: number | null;
   nome: string | null;
   telefone: string | null;
-  coordenador_nome: string | null;
+  email: string | null;
+  coordenador_nome: string | null; // coordenador da base anterior
+  gerente_nome: string | null; // gerente da base anterior
+  coordenador_falou_recentemente: string | null;
+  direcionado_em: string | null;
+  direcionado_por: string | null;
+  direcionado_para: string | null;
   campanha: string | null;
   disparo_at: string | null;
   status_envio: string | null;
@@ -238,7 +248,7 @@ async function fetchAtendimentos(
     let q = supabase
       .from("trisul_atendimentos")
       .select(
-        "id, partner_id, nome, telefone, coordenador_nome, campanha, disparo_at, status_envio, respondeu, tentativas_fup, resultado, convertido, canal_contato_coordenador, resumo_conversa",
+        "id, partner_id, nome, telefone, email, coordenador_nome, gerente_nome, coordenador_falou_recentemente, direcionado_em, direcionado_por, direcionado_para, campanha, disparo_at, status_envio, respondeu, tentativas_fup, resultado, convertido, canal_contato_coordenador, resumo_conversa",
       )
       .order("disparo_at", { ascending: false })
       .range(offset, offset + PAGE - 1);

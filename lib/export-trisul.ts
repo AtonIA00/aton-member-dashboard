@@ -3,6 +3,7 @@
 // e guard anti-injeção. Roda 100% no client (dados já vêm como props).
 
 import type { TrisulAtendimento } from "@/lib/trisul";
+import { aguardaCoordenador, ehParceiro, simNaoLabel } from "@/lib/trisul-direcionamento";
 
 export type TrisulExportMeta = {
   periodLabel: string;
@@ -36,9 +37,17 @@ type Col = { header: string; width: number; get: (a: TrisulAtendimento) => strin
 
 const COLUMNS: Col[] = [
   { header: "Disparo", width: 18, get: (a) => fmtDateTimeBr(a.disparo_at) },
+  { header: "FAC ID", width: 10, get: (a) => (a.partner_id != null ? String(a.partner_id) : "") },
   { header: "Nome", width: 24, get: (a) => a.nome ?? "", guard: true },
+  { header: "E-mail", width: 28, get: (a) => a.email ?? "", guard: true },
   { header: "Telefone", width: 18, get: (a) => a.telefone ?? "" },
-  { header: "Coordenador", width: 22, get: (a) => a.coordenador_nome ?? "", guard: true },
+  { header: "É parceiro", width: 11, get: (a) => simNaoLabel(ehParceiro(a)) },
+  { header: "Coordenador base anterior", width: 24, get: (a) => a.coordenador_nome ?? "", guard: true },
+  { header: "Gerente base anterior", width: 24, get: (a) => a.gerente_nome ?? "", guard: true },
+  { header: "Aguarda coordenador", width: 14, get: (a) => (aguardaCoordenador(a) ? "Sim" : "") },
+  { header: "Direcionado para", width: 24, get: (a) => (a.direcionado_em ? a.direcionado_para ?? "" : ""), guard: true },
+  { header: "Direcionado em", width: 18, get: (a) => fmtDateTimeBr(a.direcionado_em) },
+  { header: "Direcionado por", width: 20, get: (a) => (a.direcionado_em ? a.direcionado_por ?? "" : ""), guard: true },
   { header: "Campanha", width: 18, get: (a) => a.campanha ?? "", guard: true },
   { header: "Status envio", width: 14, get: (a) => a.status_envio ?? "" },
   { header: "Respondeu", width: 12, get: (a) => boolLabel(a.respondeu) },
