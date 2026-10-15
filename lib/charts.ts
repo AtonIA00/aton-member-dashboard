@@ -19,7 +19,7 @@ export type DailyVolumePoint = {
   total: number;
   /** Leads com mql=sim do dia. */
   mql_sim: number;
-  /** Leads no grupo Agendado+ (agendado/especialista/negociacao/financeiro). */
+  /** Leads no grupo Agendado+ (ver SET_AGENDADO_PLUS em lib/classify.ts). */
   agendado_plus: number;
 };
 
