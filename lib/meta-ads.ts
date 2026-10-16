@@ -396,16 +396,37 @@ async function fetchCreativeThumbs(
     "link_data{child_attachments{link},page_welcome_message,call_to_action}," +
     "photo_data{page_welcome_message,call_to_action}}," +
     "asset_feed_spec{videos{video_id}}}";
+  // Campos mínimos: só miniatura e vídeo, sem object_story_spec.
+  const camposMinimos =
+    "adset_id,creative.thumbnail_width(256).thumbnail_height(256){thumbnail_url,video_id}";
+  const buscar = (ids: string[], f: string) =>
+    fetchJson(
+      `https://graph.facebook.com/v21.0/?ids=${ids.join(",")}` +
+        `&fields=${f}&access_token=${encodeURIComponent(token)}`,
+      true,
+    );
+  // Um único anúncio pode fazer a Meta recusar o LOTE inteiro: criativo
+  // Advantage+ ("graus de liberdade") devolve erro 100/2446211 quando se pede
+  // object_story_spec. No All Resort (16/10/2026) foi o "Estáticos - Terra",
+  // e os outros 7 anúncios ficaram sem miniatura e sem retenção de vídeo.
+  // Então: lote falhou → anúncio por anúncio; anúncio que ainda falha → só
+  // os campos mínimos (perde só a classificação de entrada dele).
+  async function buscarLote(chunk: string[]): Promise<Record<string, unknown>[]> {
+    const lote = await buscar(chunk, fields);
+    if (lote && !lote.error) return [lote];
+    console.warn("[meta-ads] criativos: lote recusado, indo anúncio por anúncio", { n: chunk.length });
+    return Promise.all(
+      chunk.map(async (id) => {
+        const um = await buscar([id], fields);
+        if (um && !um.error) return um;
+        const minimo = await buscar([id], camposMinimos);
+        return minimo && !minimo.error ? minimo : {};
+      }),
+    );
+  }
   const chunks: string[][] = [];
   for (let i = 0; i < adIds.length; i += 50) chunks.push(adIds.slice(i, i + 50));
-  const results = await Promise.all(
-    chunks.map((chunk) =>
-      fetchJson(
-        `https://graph.facebook.com/v21.0/?ids=${chunk.join(",")}` +
-          `&fields=${fields}&access_token=${encodeURIComponent(token)}`,
-      ),
-    ),
-  );
+  const results = (await Promise.all(chunks.map(buscarLote))).flat();
   // 1ª passada: formato + thumb, guardando o video_id de cada anúncio.
   const videoDoAd = new Map<string, string>();
   for (const json of results) {
