@@ -741,6 +741,90 @@ export async function getEntradaPorAnuncio(
   return out;
 }
 
+// ── Campanha real do anúncio (21/10/2026) ──────────────────────────────────
+// O fluxo grava em nome_campanha um rótulo fixo do assinante, não a campanha
+// da Meta: na EMIVE, os 176 leads desde 21/09 chegam todos como "EMIVE", e o
+// filtro "Campanha" não separava Cachoeiro de Vitória. O anúncio do lead diz
+// a campanha de verdade. Busca por ?ids= (não depende de período, então
+// anúncio antigo também resolve), só aceita anúncio da conta ligada à
+// workspace e ignora campanha excluída (conta compartilhada: a campanha é de
+// outro produto, o lead fica com o rótulo original). Cache por anúncio de 6h,
+// inclusive o "não resolve" (null), para não repetir a chamada a cada página.
+const campanhaCache = new Map<string, { ts: number; nome: string | null }>();
+
+export async function getCampanhaPorAnuncio(
+  workspaceId: string,
+  adIds: string[],
+): Promise<Map<string, string> | null> {
+  if (!isMetaAdsEnabled()) return null;
+  const token = process.env.META_SYSTEM_USER_TOKEN;
+  if (!token) return null;
+  const ids = [...new Set(adIds.map((s) => s.trim()).filter((s) => /^\d{5,25}$/.test(s)))];
+  if (ids.length === 0) return null;
+  const account = await getAccountForWorkspace(workspaceId);
+  if (!account) return null;
+
+  const contaNum = account.act_id.replace(/^act_/, "");
+  const excluidas = new Set((account.campanhas_excluidas ?? []).map(chaveCampanha).filter(Boolean));
+  const agora = Date.now();
+  const out = new Map<string, string>();
+  const faltando: string[] = [];
+  const chave = (id: string) => `${contaNum}|${id}`;
+  for (const id of ids) {
+    const hit = campanhaCache.get(chave(id));
+    if (hit && agora - hit.ts < ENTRADA_TTL) {
+      if (hit.nome) out.set(id, hit.nome);
+    } else faltando.push(id);
+  }
+  if (faltando.length === 0) return out;
+
+  const buscar = (async () => {
+    const lotes: string[][] = [];
+    for (let i = 0; i < faltando.length; i += 50) lotes.push(faltando.slice(i, i + 50));
+    await Promise.all(
+      lotes.map(async (lote) => {
+        const json = await fetchJson(
+          `https://graph.facebook.com/v21.0/?ids=${lote.join(",")}` +
+            `&fields=account_id,campaign{id,name}&access_token=${encodeURIComponent(token)}`,
+          true,
+        );
+        // Lote recusado (anúncio apagado derruba o ?ids= inteiro): não
+        // cacheia, tenta de novo na próxima página.
+        if (!json || json.error) return;
+        for (const id of lote) {
+          const v = json[id] as { account_id?: string; campaign?: { id?: string; name?: string } } | undefined;
+          const camp = v?.campaign;
+          const ok =
+            v &&
+            String(v.account_id ?? "") === contaNum &&
+            camp?.name &&
+            !excluidas.has(chaveCampanha(camp.id)) &&
+            !excluidas.has(chaveCampanha(camp.name));
+          const nome = ok ? camp!.name!.trim() : null;
+          campanhaCache.set(chave(id), { ts: agora, nome });
+          if (nome) out.set(id, nome);
+        }
+      }),
+    );
+  })();
+
+  try {
+    const noPrazo = await Promise.race([
+      buscar.then(() => true),
+      new Promise<false>((r) => setTimeout(() => r(false), ENTRADA_DEADLINE_MS)),
+    ]);
+    if (!noPrazo) {
+      console.warn("[meta-ads] campanha por anúncio estourou o prazo", { workspaceId, faltando: faltando.length });
+    }
+  } catch (e) {
+    console.error("[meta-ads] campanha por anúncio falhou", {
+      workspaceId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+  return out.size > 0 ? out : null;
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // Canal interno pro Aton Core (motor de saúde do assinante / relatório gpt).
 //

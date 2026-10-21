@@ -13,7 +13,7 @@ import {
   type Dimensions,
   type Filters,
 } from "./filters";
-import { getEntradaPorAnuncio } from "./meta-ads";
+import { getCampanhaPorAnuncio, getEntradaPorAnuncio } from "./meta-ads";
 import {
   buildAllCharts,
   buildMonthlyEvolution,
@@ -318,10 +318,31 @@ export async function getDashboardData(
     getExcludedLeadIds(workspaceId),
   ]);
 
+  // Campanha REAL da Meta, pelo anúncio do lead (21/10/2026): o fluxo grava
+  // em nome_campanha um rótulo fixo do assinante ("EMIVE" em todos os leads),
+  // e o filtro, os gráficos, a tabela e o export não separavam campanhas.
+  // Troca o nome antes de qualquer cálculo, só da leitura (o CRM não muda).
+  // Lead sem anúncio, ou com anúncio fora da conta/campanha excluída,
+  // mantém o nome_campanha que veio.
+  const idsTodos = [
+    ...new Set(
+      [...baseExpanded.leads, ...twelveMo.leads]
+        .map((l) => (l.id_anuncio ?? "").trim())
+        .filter((s) => s !== ""),
+    ),
+  ];
+  const campanhaPorAnuncio = idsTodos.length
+    ? await getCampanhaPorAnuncio(workspaceId, idsTodos).catch(() => null)
+    : null;
+  const comCampanha = (l: LeadRow): LeadRow => {
+    const nome = campanhaPorAnuncio?.get((l.id_anuncio ?? "").trim());
+    return nome ? { ...l, nome_campanha: nome } : l;
+  };
+
   // Leads marcados como teste somem de TUDO (KPIs, funil, ads, charts, tabela,
   // export, tools do TON). Filtro aplicado uma vez, antes de qualquer cálculo.
-  const base = baseExpanded.leads.filter((l) => !excludedIds.has(l.id));
-  const twelveMoLeads = twelveMo.leads.filter((l) => !excludedIds.has(l.id));
+  const base = baseExpanded.leads.filter((l) => !excludedIds.has(l.id)).map(comCampanha);
+  const twelveMoLeads = twelveMo.leads.filter((l) => !excludedIds.has(l.id)).map(comCampanha);
   const currentLeadsAll = leadsInRange(base, range);
   const previousLeadsAll = prev ? leadsInRange(base, prev) : [];
 
