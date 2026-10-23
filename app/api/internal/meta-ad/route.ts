@@ -15,7 +15,12 @@ export const dynamic = "force-dynamic";
 //   Authorization: Bearer <INTERNAL_SHARED_SECRET>
 //
 // Respostas:
-//   200 { account_id, name }    account_id sem o prefixo "act_"
+//   200 { account_id, name, adset_name, campaign_name }
+//                               account_id sem o prefixo "act_"; adset_name e
+//                               campaign_name (23/10/2026, aditivos) vêm null
+//                               se a Meta não devolver. A YZ registra no CV a
+//                               mídia = público (conjunto) e a conversão =
+//                               criativo (anúncio).
 //   400 invalid_id              id fora de 5–25 dígitos
 //   401 unauthorized            bearer ausente/errado
 //   404 not_found               a Meta não devolveu o anúncio (apagado ou
@@ -25,11 +30,17 @@ export const dynamic = "force-dynamic";
 // O Core trata qualquer 4xx/5xx como "sem mídia" e segue.
 //
 // Não restringe às contas ligadas em wa_meta_ads_accounts (diferente do
-// meta-graph): devolve só a conta e o nome de um anúncio que o system user
-// já enxerga, nada de gasto ou dado de campanha.
+// meta-graph): devolve só a conta e os NOMES de anúncio, conjunto e campanha
+// de um anúncio que o system user já enxerga. Nada de gasto ou métrica.
 
 const TTL_MS = 60 * 60_000;
-const cache = new Map<string, { ts: number; data: { account_id: string; name: string | null } }>();
+type AdInfo = {
+  account_id: string;
+  name: string | null;
+  adset_name: string | null;
+  campaign_name: string | null;
+};
+const cache = new Map<string, { ts: number; data: AdInfo }>();
 
 function bearerOk(header: string | null, secret: string): boolean {
   if (!header?.startsWith("Bearer ")) return false;
@@ -59,11 +70,17 @@ export async function GET(req: NextRequest) {
   const timer = setTimeout(() => controller.abort(), 10_000);
   try {
     const res = await fetch(
-      `https://graph.facebook.com/v21.0/${id}?fields=account_id,name&access_token=${encodeURIComponent(token)}`,
+      `https://graph.facebook.com/v21.0/${id}?fields=account_id,name,adset%7Bname%7D,campaign%7Bname%7D&access_token=${encodeURIComponent(token)}`,
       { cache: "no-store", signal: controller.signal },
     );
     const json = (await res.json().catch(() => null)) as
-      | { account_id?: string; name?: string; error?: { code?: number } }
+      | {
+          account_id?: string;
+          name?: string;
+          adset?: { name?: string };
+          campaign?: { name?: string };
+          error?: { code?: number };
+        }
       | null;
     if (!res.ok || !json || json.error) {
       // 100 = objeto inexistente ou sem permissão: para o Core é "não achei".
@@ -74,7 +91,12 @@ export async function GET(req: NextRequest) {
         : NextResponse.json({ error: "upstream_failed" }, { status: 502 });
     }
     if (!json.account_id) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    const data = { account_id: String(json.account_id), name: json.name ?? null };
+    const data: AdInfo = {
+      account_id: String(json.account_id),
+      name: json.name ?? null,
+      adset_name: json.adset?.name ?? null,
+      campaign_name: json.campaign?.name ?? null,
+    };
     cache.set(id, { ts: Date.now(), data });
     return NextResponse.json(data);
   } catch (e) {
