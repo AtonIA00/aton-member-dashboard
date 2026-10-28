@@ -32,7 +32,24 @@ export type Filters = {
    *  outros filtros, NÃO sai de uma coluna do lead — vem do anúncio, via
    *  Meta. Sem conta Meta vinculada a dimensão fica vazia e o seletor some. */
   entrada?: string;
+  /** Quem atendeu: "flavia" (o agente conversou) ou "direto" (horário
+   *  comercial, foi direto ao corretor no CV). Só existe para o assinante com
+   *  separar_atendimento_modo ligado (WDS, 28/10/2026). */
+  atendimento?: AtendimentoModo;
 };
+
+export type AtendimentoModo = "flavia" | "direto";
+export const ATENDIMENTO_LABEL: Record<AtendimentoModo, string> = {
+  flavia: "Flávia",
+  direto: "Direto ao corretor",
+};
+
+/** Modo de atendimento do lead. Antes de 26/10/2026 a coluna não existia e a
+ *  Flávia atendia todo lead; depois, o Core grava na primeira entrada. Vazio
+ *  cai em "flavia" nos dois casos: é o caminho padrão do fluxo. */
+export function atendimentoDoLead(l: Pick<LeadRow, "atendimento_modo">): AtendimentoModo {
+  return (l.atendimento_modo ?? "").trim().toLowerCase() === "direto" ? "direto" : "flavia";
+}
 
 const ALL_FILTER_KEYS = [
   "campanha",
@@ -43,6 +60,7 @@ const ALL_FILTER_KEYS = [
   "mql",
   "etapa",
   "entrada",
+  "atendimento",
 ] as const;
 
 const ETAPA_GROUP_MAP: Record<EtapaKey, Grupo> = {
@@ -157,7 +175,12 @@ export function parseFilters(
   const etapa: EtapaKey | undefined =
     etapaRaw && etapaRaw in ETAPA_GROUP_MAP ? (etapaRaw as EtapaKey) : undefined;
 
+  const atendRaw = get("atendimento");
+  const atendimento: AtendimentoModo | undefined =
+    atendRaw === "flavia" || atendRaw === "direto" ? atendRaw : undefined;
+
   return {
+    atendimento,
     campanha: get("campanha"),
     anuncio: get("anuncio"),
     canal: get("canal"),
@@ -204,6 +227,7 @@ export function dropInvalidFilters(
     estados: string[];
     cidades: Array<{ nome: string }>;
     entradas: string[];
+    atendimentos: AtendimentoModo[];
   },
   workspaceId: string,
 ): Filters {
@@ -234,6 +258,11 @@ export function dropInvalidFilters(
   if (clean.entrada && !dimensions.entradas.includes(clean.entrada)) {
     dropped.push(`entrada=${clean.entrada}`);
     delete clean.entrada;
+  }
+
+  if (clean.atendimento && !dimensions.atendimentos.includes(clean.atendimento)) {
+    dropped.push(`atendimento=${clean.atendimento}`);
+    delete clean.atendimento;
   }
 
   if (dropped.length > 0) {
@@ -294,6 +323,9 @@ export function applyFilters(
     if (filters.entrada) {
       if (entradaDoLead(l.id_anuncio, entradaPorAnuncio) !== filters.entrada) return false;
     }
+    if (filters.atendimento) {
+      if (atendimentoDoLead(l) !== filters.atendimento) return false;
+    }
     if (filters.mql) {
       const v = (l.mql ?? "").toLowerCase().trim();
       if (filters.mql === "sim" && v !== "sim") return false;
@@ -325,6 +357,8 @@ export type Dimensions = {
   /** Portas de entrada presentes no recorte, na ordem de exibição. Vazio
    *  quando não há dado de Meta — aí o seletor nem aparece. */
   entradas: string[];
+  /** Vazio para quem não separa por modo de atendimento: o seletor some. */
+  atendimentos: AtendimentoModo[];
 };
 
 /**
@@ -337,6 +371,7 @@ export type Dimensions = {
 export function computeDimensions(
   leads: LeadRow[],
   entradaPorAnuncio?: Map<string, EntradaLead | null> | null,
+  separarAtendimentoModo = false,
 ): Dimensions {
   // Campanhas com count desc.
   const campCount = new Map<string, number>();
@@ -416,7 +451,11 @@ export function computeDimensions(
     if (vistas.has(SENTINEL.ENTRADA)) entradas.push(SENTINEL.ENTRADA);
   }
 
-  return { campanhas, anuncios, canais, estados, cidades, entradas };
+  // Os dois modos sempre, quando ligado: "Direto" com zero no recorte também
+  // é resposta (ninguém chegou em horário comercial).
+  const atendimentos: AtendimentoModo[] = separarAtendimentoModo ? ["flavia", "direto"] : [];
+
+  return { campanhas, anuncios, canais, estados, cidades, entradas, atendimentos };
 }
 
 // Helper de label legível pra UI a partir do valor cru/sentinela.

@@ -136,3 +136,41 @@ export async function checkDashboardAccess(
     superadminBypass: false,
   };
 }
+
+// ── Recursos por assinante (28/10/2026) ──────────────────────────────────
+// Ligados na linha do workspace em wa_member_dashboard_access, padrão
+// desligado. Lidos À PARTE do checkDashboardAccess de propósito: o
+// super-admin entra por bypass sem ler a linha, e precisa ver o dash do
+// assinante como ele é, com os recursos dele.
+export type RecursosAssinante = {
+  /** KPIs e funil separados por terrace360.atendimento_modo (WDS). */
+  separarAtendimentoModo: boolean;
+  /** Telefones (só dígitos) cujos leads somem do dash como se excluídos. */
+  telefonesTeste: string[];
+};
+
+const RECURSOS_VAZIO: RecursosAssinante = { separarAtendimentoModo: false, telefonesTeste: [] };
+const recursosCache = new Map<string, { ts: number; data: RecursosAssinante }>();
+const RECURSOS_TTL_MS = 60_000;
+
+export async function getRecursosAssinante(workspaceId: string): Promise<RecursosAssinante> {
+  const hit = recursosCache.get(workspaceId);
+  if (hit && Date.now() - hit.ts < RECURSOS_TTL_MS) return hit.data;
+  const { data, error } = await getSupabaseAdmin()
+    .from("wa_member_dashboard_access")
+    .select("separar_atendimento_modo, telefones_teste")
+    .eq("uchat_workspace_id", workspaceId)
+    .maybeSingle<{ separar_atendimento_modo: boolean | null; telefones_teste: string[] | null }>();
+  if (error) {
+    console.error("[access] recursos falhou", { workspaceId, message: error.message });
+    return RECURSOS_VAZIO;
+  }
+  const recursos: RecursosAssinante = {
+    separarAtendimentoModo: data?.separar_atendimento_modo === true,
+    telefonesTeste: (data?.telefones_teste ?? [])
+      .map((t) => String(t).replace(/\D/g, ""))
+      .filter(Boolean),
+  };
+  recursosCache.set(workspaceId, { ts: Date.now(), data: recursos });
+  return recursos;
+}

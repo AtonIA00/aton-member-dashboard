@@ -3,6 +3,8 @@
 import { useMemo, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
+  ATENDIMENTO_LABEL,
+  type AtendimentoModo,
   ETAPA_LABEL,
   MQL_LABEL,
   SENTINEL,
@@ -87,6 +89,21 @@ export function FilterBar({ dimensions, totalNoPeriodo }: Props) {
       className="mt-6 rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color:var(--card)]/50 px-5 py-4 backdrop-blur"
     >
       <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+        {/* Atendimento — quem atendeu o lead. Só para quem separa por modo
+            (WDS); para os demais a dimensão vem vazia e o seletor some. */}
+        {dimensions.atendimentos.length > 0 && (
+          <Select
+            label="Atendimento"
+            value={filters.atendimento ?? ""}
+            onChange={(v) => setFilter("atendimento", (v || undefined) as AtendimentoModo | undefined)}
+            options={[
+              { value: "", label: "Todos" },
+              ...dimensions.atendimentos.map((a) => ({ value: a, label: ATENDIMENTO_LABEL[a] })),
+            ]}
+            minWidth="11rem"
+          />
+        )}
+
         {/* Campanha */}
         <Select
           label="Campanha"

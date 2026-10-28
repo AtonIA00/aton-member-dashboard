@@ -22,6 +22,17 @@ import {
 } from "./charts";
 import { computeDelta, type Delta } from "./deltas";
 import { getExcludedLeadIds } from "./lead-exclusions";
+import { getRecursosAssinante } from "./access";
+import { atendimentoDoLead } from "./filters";
+
+/** Telefone comparável: DDD + 8 últimos dígitos. Ignora o 55 e o nono
+ *  dígito, que o CRM grava às vezes sim, às vezes não, para o mesmo número. */
+export function chaveTelefone(t: string | null | undefined): string | null {
+  let d = (t ?? "").replace(/\D/g, "");
+  if (d.length >= 12 && d.startsWith("55")) d = d.slice(2);
+  if (d.length < 10) return null;
+  return d.slice(0, 2) + d.slice(-8);
+}
 
 // Linha crua da terrace360_leads_atonhub — apenas as colunas que o dashboard
 // consome. Demais colunas (probabilidade_avanco, dia_hora_semana, cliente,
@@ -40,6 +51,9 @@ export type LeadRow = {
   canal_campanha: string | null;
   cidade_campanha: string | null;
   estado_campanha: string | null;
+  /** 'flavia' | 'direto' | null — só a WDS grava (28/10/2026). Opcional
+   *  porque outras leituras de LeadRow não selecionam a coluna. */
+  atendimento_modo?: string | null;
 };
 
 export type Kpis = {
@@ -142,6 +156,15 @@ export type DashboardData = {
   fetchMs: number;
   /** Quantos leads o período tem no total (ignora filtros) — útil pra UI. */
   totalNoPeriodo: number;
+  /** Assinante separa KPIs por quem atendeu (WDS). Quando true, `kpis`,
+   *  `kpisPrevious` e `deltas` são SÓ dos leads da Flávia: quem foi direto ao
+   *  corretor não teve conversa e derrubaria interação e MQL. O `funnel`
+   *  segue o legado; a tela troca pelo funil até o CV. */
+  separarAtendimentoModo: boolean;
+  /** KPIs de TODOS os leads do recorte, mesmo separando por modo. É o que a
+   *  tabela de anúncios usa: o investimento pagou os leads diretos também, e
+   *  o CPL só da Flávia sairia inflado. Igual a `kpis` quando não separa. */
+  kpisTodos: Kpis;
 };
 
 // Cache em memória do FETCH BASE (leads do período, sem filtros). Filters
@@ -189,7 +212,7 @@ async function fetchBaseLeads(
     let q = supabase
       .from("terrace360_leads_atonhub")
       .select(
-        "id, data, nome_lead, etapa_funil, resumo_conversa, telefone, ddd_lead, nome_campanha, id_anuncio, mql, canal_campanha, cidade_campanha, estado_campanha",
+        "id, data, nome_lead, etapa_funil, resumo_conversa, telefone, ddd_lead, nome_campanha, id_anuncio, mql, canal_campanha, cidade_campanha, estado_campanha, atendimento_modo",
       )
       .eq("id_workspace_responsavel", workspaceId)
       .order("data", { ascending: false })
@@ -312,11 +335,18 @@ export async function getDashboardData(
   };
 
   // Os 2 fetches + a lista de exclusões são independentes — paralelizar.
-  const [baseExpanded, twelveMo, excludedIds] = await Promise.all([
+  // Recursos do assinante lidos aqui, e não passados por quem chama, para o
+  // dash, a API e as tools do TON verem os mesmos números.
+  const [baseExpanded, twelveMo, excludedIds, recursos] = await Promise.all([
     fetchBaseLeads(workspaceId, expanded),
     fetchBaseLeads(workspaceId, twelveMoRange),
     getExcludedLeadIds(workspaceId),
+    getRecursosAssinante(workspaceId),
   ]);
+  const separarModo = recursos.separarAtendimentoModo;
+  const telefonesTeste = new Set(
+    recursos.telefonesTeste.map(chaveTelefone).filter((t): t is string => t !== null),
+  );
 
   // Campanha REAL da Meta, pelo anúncio do lead (21/10/2026): o fluxo grava
   // em nome_campanha um rótulo fixo do assinante ("EMIVE" em todos os leads),
@@ -341,8 +371,13 @@ export async function getDashboardData(
 
   // Leads marcados como teste somem de TUDO (KPIs, funil, ads, charts, tabela,
   // export, tools do TON). Filtro aplicado uma vez, antes de qualquer cálculo.
-  const base = baseExpanded.leads.filter((l) => !excludedIds.has(l.id)).map(comCampanha);
-  const twelveMoLeads = twelveMo.leads.filter((l) => !excludedIds.has(l.id)).map(comCampanha);
+  // Telefones de teste do assinante (wa_member_dashboard_access.telefones_teste)
+  // têm o mesmo efeito, sem precisar marcar lead a lead a cada teste.
+  const ehTeste = (l: LeadRow) =>
+    excludedIds.has(l.id) ||
+    (telefonesTeste.size > 0 && telefonesTeste.has(chaveTelefone(l.telefone) ?? ""));
+  const base = baseExpanded.leads.filter((l) => !ehTeste(l)).map(comCampanha);
+  const twelveMoLeads = twelveMo.leads.filter((l) => !ehTeste(l)).map(comCampanha);
   const currentLeadsAll = leadsInRange(base, range);
   const previousLeadsAll = prev ? leadsInRange(base, prev) : [];
 
@@ -367,7 +402,7 @@ export async function getDashboardData(
     : null;
 
   // Dimensões e filtros derivam SEMPRE do recorte CURRENT (mais útil pra UI).
-  const dimensions = computeDimensions(currentLeadsAll, entradaPorAnuncio);
+  const dimensions = computeDimensions(currentLeadsAll, entradaPorAnuncio, separarModo);
   const filters = dropInvalidFilters(filtersIn, dimensions, workspaceId);
 
   // Aplica filtros aos DOIS recortes — comparativo é "mesma lente filtrada
@@ -377,9 +412,13 @@ export async function getDashboardData(
     ? applyFilters(previousLeadsAll, filters, entradaPorAnuncio)
     : [];
 
-  const kpis = computeKpis(currentFiltered);
+  // Interação, MQL e convertido medem a CONVERSA. Separando por modo, só os
+  // leads da Flávia entram; os diretos ganham bloco próprio na tela.
+  const soFlavia = (ls: LeadRow[]) =>
+    separarModo ? ls.filter((l) => atendimentoDoLead(l) === "flavia") : ls;
+  const kpis = computeKpis(soFlavia(currentFiltered));
   const temPosAtendimento = twelveMoLeads.some((l) => posAtendimento(l.etapa_funil) !== null);
-  const kpisPrevious = prev ? computeKpis(previousFiltered) : null;
+  const kpisPrevious = prev ? computeKpis(soFlavia(previousFiltered)) : null;
   const deltas: Deltas | null = kpisPrevious
     ? {
         total: computeDelta(kpis.total, kpisPrevious.total, {
@@ -448,6 +487,8 @@ export async function getDashboardData(
     fetchedAt: new Date().toISOString(),
     fetchMs: baseExpanded.fetchMs + twelveMo.fetchMs,
     totalNoPeriodo: currentLeadsAll.length,
+    separarAtendimentoModo: separarModo,
+    kpisTodos: separarModo ? computeKpis(currentFiltered) : kpis,
   };
 }
 

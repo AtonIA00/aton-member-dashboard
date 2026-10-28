@@ -1,6 +1,23 @@
 import type { FunnelStep } from "@/lib/leads";
 
-type Props = { steps: FunnelStep[] };
+type Props = {
+  steps: FunnelStep[];
+  titulo?: string;
+  /** Cores por etapa; sem isto, a paleta do funil de qualificação. */
+  cores?: string[];
+};
+
+/** Funil até o CV (WDS): Chegou → Atendido → No CV → Com corretor → Em
+ *  atendimento → Visita → Venda. */
+export const CORES_FUNIL_CV = [
+  "#0057ff",
+  "#00c2ff",
+  "#10b981",
+  "#f59e0b",
+  "#f97316",
+  "#8b5cf6",
+  "#062f28",
+];
 
 // Paleta Aton v2 com diferenciação por etapa.
 // Ordem: Leads Totais → Interagiram → MQL Sim → Agendado+.
@@ -21,7 +38,7 @@ function int(n: number): string {
   return n.toLocaleString("pt-BR");
 }
 
-export function Funnel({ steps }: Props) {
+export function Funnel({ steps, titulo = "Funil de Qualificação", cores = STEP_COLORS }: Props) {
   const max = Math.max(1, ...steps.map((s) => s.count));
 
   return (
@@ -32,14 +49,14 @@ export function Funnel({ steps }: Props) {
           className="block h-4 w-1 rounded-sm bg-[color:var(--primary)]"
         />
         <h2 className="font-[family-name:var(--font-montserrat)] text-xs font-bold uppercase tracking-[0.15em] text-[color:var(--muted-foreground)]">
-          Funil de Qualificação
+          {titulo}
         </h2>
       </div>
 
       <div className="flex flex-col gap-3">
         {steps.map((s, i) => {
           const widthPct = Math.max((s.count / max) * 100, s.count > 0 ? 3 : 0);
-          const color = STEP_COLORS[i] ?? "var(--muted-foreground)";
+          const color = cores[i] ?? "var(--muted-foreground)";
           return (
             <div key={s.label} className="flex items-center gap-3">
               <div className="w-28 flex-shrink-0 text-right text-xs font-semibold text-[color:var(--muted-foreground)]">

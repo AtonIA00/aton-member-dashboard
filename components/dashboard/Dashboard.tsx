@@ -27,6 +27,10 @@ import { DetalhesToggle, DETALHES_ROOT_ID } from "@/components/DetalhesToggle";
 import { getMostrarDetalhes } from "@/lib/preferences";
 import { RetornoComercialSection } from "./RetornoComercialSection";
 import { getMetaAdsForWorkspace, toTablePayload, type MetaAdsForTable } from "@/lib/meta-ads";
+import { getCvLeads, type CvLead } from "@/lib/cv-leads";
+import { montarAtendimento } from "@/lib/atendimento-modo";
+import { AtendimentoModoSection, CustoPorVisitaTable } from "./AtendimentoModoSection";
+import { CORES_FUNIL_CV } from "./Funnel";
 
 type HmacParams = {
   workspace_id: string;
@@ -158,6 +162,19 @@ export async function Dashboard({
           return null;
         });
 
+  // Etapas do CV (corretor, visita, venda), só para quem separa por modo de
+  // atendimento. Corre em paralelo com a Meta; null = CV indisponível agora
+  // (o funil para em "Atendido", nada quebra).
+  const cvPromise: Promise<CvLead[] | null> = isTonTab
+    ? Promise.resolve(null)
+    : dashboardDataPromise!
+        .then((d) => {
+          if (!d.separarAtendimentoModo) return null;
+          // Sem início ("Todo período"): desde quando a integração com o CV existe.
+          return getCvLeads(workspaceId, d.range.from ?? "2026-10-01");
+        })
+        .catch(() => null);
+
   return (
     <main
       id={DETALHES_ROOT_ID}
@@ -231,6 +248,7 @@ export async function Dashboard({
             <DashboardContent
               data={await dashboardDataPromise}
               metaAds={await metaAdsPromise}
+              cvLeads={await cvPromise}
               outbound={await outboundPromise}
               workspaceName={workspaceName}
               periodKey={periodKey}
@@ -258,6 +276,8 @@ export async function Dashboard({
 type DashboardContentProps = {
   data: Awaited<ReturnType<typeof getDashboardData>>;
   metaAds: MetaAdsForTable | null;
+  /** Leads no CV; só vem para quem separa por modo de atendimento. */
+  cvLeads: CvLead[] | null;
   /** null = assinante não faz disparo ativo; a seção não existe pra ele. */
   outbound: OutboundData | null;
   workspaceName: string;
@@ -274,6 +294,7 @@ type DashboardContentProps = {
 function DashboardContent({
   data,
   metaAds,
+  cvLeads,
   outbound,
   workspaceName,
   periodKey,
@@ -288,6 +309,9 @@ function DashboardContent({
   const range = resolvePeriod(periodKey, customFrom, customTo);
   const periodSummary = formatPeriodSummary(periodKey, range);
   const filtersActive = hasAnyFilter(data.filters);
+  const atendimento = data.separarAtendimentoModo
+    ? montarAtendimento(data.leads, cvLeads, metaAds, data.filters.atendimento)
+    : null;
 
   // Rótulo conciso do período pro arquivo exportado (título/nome).
   const periodLabel =
@@ -302,15 +326,27 @@ function DashboardContent({
       {/* FilterBar — só aparece se tem leads no período */}
       <FilterBar dimensions={data.dimensions} totalNoPeriodo={data.totalNoPeriodo} />
 
+      {/* Por modo de atendimento (WDS): caminhos de entrada acima dos KPIs,
+          que nessa visão são só da Flávia. No filtro "Direto ao corretor"
+          os KPIs de conversa somem: não houve conversa para medir. */}
+      {atendimento && data.totalNoPeriodo > 0 && <AtendimentoModoSection r={atendimento} />}
+
       {/* KPIs */}
-      <div className="mt-6">
-        <KpiRow
-          kpis={data.kpis}
-          kpisPrevious={data.kpisPrevious}
-          deltas={data.deltas}
-          temPosAtendimento={data.temPosAtendimento}
-        />
-      </div>
+      {atendimento?.filtro !== "direto" && (
+        <div className="mt-6">
+          {atendimento && (
+            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-[color:var(--muted-foreground)]">
+              Conversa com a Flávia
+            </p>
+          )}
+          <KpiRow
+            kpis={data.kpis}
+            kpisPrevious={data.kpisPrevious}
+            deltas={data.deltas}
+            temPosAtendimento={data.temPosAtendimento}
+          />
+        </div>
+      )}
 
       {/* Retorno do time comercial — janela própria (não segue os filtros do
           dash), some sozinha se indisponível/desligada. Fica fora do ternário
@@ -336,7 +372,7 @@ function DashboardContent({
           title="Você ainda não recebeu leads nesse período"
           body="Tente um intervalo maior no dropdown acima. Se acredita que deveria ter leads aqui, fale com a Aton."
         />
-      ) : data.kpis.total === 0 && filtersActive ? (
+      ) : data.leads.length === 0 && filtersActive ? (
         <EmptyState
           title="Nenhum lead bateu com os filtros selecionados"
           body={`Você tem ${data.totalNoPeriodo.toLocaleString("pt-BR")} ${data.totalNoPeriodo === 1 ? "lead" : "leads"} no período. Limpe os filtros ou ajuste o período pra ver resultados.`}
@@ -345,13 +381,22 @@ function DashboardContent({
       ) : (
         <>
           <div className="mt-8">
-            <Funnel steps={data.funnel} />
+            {atendimento ? (
+              <Funnel steps={atendimento.funil} titulo="Funil até a venda" cores={CORES_FUNIL_CV} />
+            ) : (
+              <Funnel steps={data.funnel} />
+            )}
           </div>
+          {atendimento && (
+            <div className="mt-8">
+              <CustoPorVisitaTable r={atendimento} />
+            </div>
+          )}
           <div className="mt-8">
             <AdsPerformanceTable
               rows={data.adsPerformance}
               metaAds={metaAds}
-              kpis={data.kpis}
+              kpis={data.kpisTodos}
               filtersActive={filtersActive}
               workspaceName={workspaceName}
               periodLabel={periodLabel}
