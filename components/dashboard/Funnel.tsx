@@ -7,17 +7,21 @@ type Props = {
   cores?: string[];
 };
 
-/** Funil até o CV (WDS): Chegou → Atendido → No CV → Com corretor → Em
- *  atendimento → Visita → Venda. */
-export const CORES_FUNIL_CV = [
-  "#0057ff",
-  "#00c2ff",
-  "#10b981",
-  "#f59e0b",
-  "#f97316",
-  "#8b5cf6",
-  "#062f28",
-];
+/** Funil até a venda (WDS), cor por rótulo: sem o CV o funil para em
+ *  Agendado e as posições mudam, mas cada etapa mantém a sua cor. */
+const COR_ETAPA_CV: Record<string, string> = {
+  Chegou: "#0057ff",
+  Atendido: "#00c2ff",
+  "No CV": "#10b981",
+  "Com corretor": "#f59e0b",
+  "Em atendimento": "#f97316",
+  Agendado: "#ec4899",
+  Visita: "#8b5cf6",
+  Venda: "#062f28",
+};
+export function coresFunilCv(steps: FunnelStep[]): string[] {
+  return steps.map((s) => COR_ETAPA_CV[s.label] ?? "var(--muted-foreground)");
+}
 
 // Paleta Aton v2 com diferenciação por etapa.
 // Ordem: Leads Totais → Interagiram → MQL Sim → Agendado+.

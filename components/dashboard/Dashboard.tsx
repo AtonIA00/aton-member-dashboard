@@ -30,7 +30,7 @@ import { getMetaAdsForWorkspace, toTablePayload, type MetaAdsForTable } from "@/
 import { getCvLeads, type CvLead } from "@/lib/cv-leads";
 import { montarAtendimento } from "@/lib/atendimento-modo";
 import { AtendimentoModoSection, CustoPorVisitaTable } from "./AtendimentoModoSection";
-import { CORES_FUNIL_CV } from "./Funnel";
+import { coresFunilCv } from "./Funnel";
 
 type HmacParams = {
   workspace_id: string;
@@ -382,7 +382,7 @@ function DashboardContent({
         <>
           <div className="mt-8">
             {atendimento ? (
-              <Funnel steps={atendimento.funil} titulo="Funil até a venda" cores={CORES_FUNIL_CV} />
+              <Funnel steps={atendimento.funil} titulo="Funil até a venda" cores={coresFunilCv(atendimento.funil)} />
             ) : (
               <Funnel steps={data.funnel} />
             )}

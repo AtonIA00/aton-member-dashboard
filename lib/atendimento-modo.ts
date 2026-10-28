@@ -77,6 +77,7 @@ export function montarAtendimento(
   let flavia = 0;
   let direto = 0;
   let atendidos = 0;
+  let agendados = 0;
   let diretoNoCv = 0;
   let diretoComCorretor = 0;
   const tempos: number[] = [];
@@ -90,7 +91,12 @@ export function montarAtendimento(
     // O CV conta mesmo para lead da Flávia em "Novo Lead": em 28/10 havia 3
     // assim (a etapa no CRM não andou, mas o lead foi entregue), e sem isso
     // "No CV" passava de "Atendido" no funil.
-    if (c || (modo === "flavia" && classify(l.etapa_funil) !== "Novo")) atendidos++;
+    // Agendada = a Flávia converteu (CRM em Agendado+) ou o CV já registra
+    // visita. Em 28/10 o 1º agendamento da Flávia não aparecia nem no funil
+    // nem na tabela, porque visita só conta depois de feita.
+    const agendou = classify(l.etapa_funil) === "Agendado+" || (c != null && chegouAte(c, "visita"));
+    if (agendou) agendados++;
+    if (c || agendou || (modo === "flavia" && classify(l.etapa_funil) !== "Novo")) atendidos++;
     if (modo === "flavia") {
       flavia++;
     } else {
@@ -112,10 +118,7 @@ export function montarAtendimento(
     if (ad) {
       const b = ads.get(ad) ?? { leads: 0, agendados: 0, noCv: 0, visitas: 0, vendas: 0 };
       b.leads++;
-      // Agendada = a Flávia converteu (CRM em Agendado+) ou o CV já registra
-      // visita. Em 28/10 o 1º agendamento da Flávia não aparecia em lugar
-      // nenhum desta tabela, porque visita só conta depois de feita.
-      if (classify(l.etapa_funil) === "Agendado+" || (c && chegouAte(c, "visita"))) b.agendados++;
+      if (agendou) b.agendados++;
       if (c) {
         b.noCv++;
         if (chegouAte(c, "visita")) b.visitas++;
@@ -128,6 +131,10 @@ export function montarAtendimento(
   const total = leads.length;
   const pct = (n: number) => (total > 0 ? n / total : 0);
   const cvDisponivel = cv != null;
+  // Agendado vem do CRM, então fica mesmo sem o CV. Com o CV ele entra antes
+  // de Visita; pode passar de "Em atendimento" quando a Flávia agenda antes
+  // de o corretor pegar o lead no CV.
+  const agendado: FunnelStep = { label: "Agendado", count: agendados, pctOfTotal: pct(agendados) };
   const funil: FunnelStep[] = [
     { label: "Chegou", count: total, pctOfTotal: 1 },
     { label: "Atendido", count: atendidos, pctOfTotal: pct(atendidos) },
@@ -136,10 +143,11 @@ export function montarAtendimento(
           { label: "No CV", count: passo.no_cv, pctOfTotal: pct(passo.no_cv) },
           { label: "Com corretor", count: passo.com_corretor, pctOfTotal: pct(passo.com_corretor) },
           { label: "Em atendimento", count: passo.em_atendimento, pctOfTotal: pct(passo.em_atendimento) },
+          agendado,
           { label: "Visita", count: passo.visita, pctOfTotal: pct(passo.visita) },
           { label: "Venda", count: passo.venda, pctOfTotal: pct(passo.venda) },
         ]
-      : []),
+      : [agendado]),
   ];
 
   const porAnuncio: AnuncioVisita[] = [...ads.entries()].map(([id, b]) => {
