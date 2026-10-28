@@ -23,9 +23,13 @@ export type AnuncioVisita = {
   /** Gasto do anúncio no período (Meta). null = sem dado da Meta. */
   gasto: number | null;
   leads: number;
+  /** Convertido no CRM (Agendado+) ou com visita no CV. Não depende do CV estar no ar. */
+  agendados: number;
   noCv: number;
   visitas: number;
   vendas: number;
+  /** gasto ÷ agendados. null = sem agendamento ou sem gasto. */
+  custoPorAgendamento: number | null;
   /** gasto ÷ visitas. null = sem visita ou sem gasto: a tela escreve "sem visita". */
   custoPorVisita: number | null;
 };
@@ -77,7 +81,7 @@ export function montarAtendimento(
   let diretoComCorretor = 0;
   const tempos: number[] = [];
   const passo = { no_cv: 0, com_corretor: 0, em_atendimento: 0, visita: 0, venda: 0 };
-  const ads = new Map<string, { leads: number; noCv: number; visitas: number; vendas: number }>();
+  const ads = new Map<string, { leads: number; agendados: number; noCv: number; visitas: number; vendas: number }>();
 
   for (const l of leads) {
     const modo = atendimentoDoLead(l);
@@ -106,8 +110,12 @@ export function montarAtendimento(
     }
     const ad = (l.id_anuncio ?? "").trim();
     if (ad) {
-      const b = ads.get(ad) ?? { leads: 0, noCv: 0, visitas: 0, vendas: 0 };
+      const b = ads.get(ad) ?? { leads: 0, agendados: 0, noCv: 0, visitas: 0, vendas: 0 };
       b.leads++;
+      // Agendada = a Flávia converteu (CRM em Agendado+) ou o CV já registra
+      // visita. Em 28/10 o 1º agendamento da Flávia não aparecia em lugar
+      // nenhum desta tabela, porque visita só conta depois de feita.
+      if (classify(l.etapa_funil) === "Agendado+" || (c && chegouAte(c, "visita"))) b.agendados++;
       if (c) {
         b.noCv++;
         if (chegouAte(c, "visita")) b.visitas++;
@@ -144,6 +152,7 @@ export function montarAtendimento(
       thumb: m?.thumbnailUrl ?? null,
       gasto,
       ...b,
+      custoPorAgendamento: gasto != null && gasto > 0 && b.agendados > 0 ? gasto / b.agendados : null,
       custoPorVisita: gasto != null && gasto > 0 && b.visitas > 0 ? gasto / b.visitas : null,
     };
   });

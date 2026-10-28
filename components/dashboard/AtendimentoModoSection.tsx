@@ -95,7 +95,7 @@ export function AtendimentoModoSection({ r }: { r: AtendimentoResumo }) {
       </div>
       {!r.cvDisponivel && (
         <p className="mt-3 text-xs text-[color:var(--muted-foreground)]">
-          Os dados do CV estão carregando. Atualize a página em alguns segundos para ver corretor, visita e venda.
+          O CV não respondeu agora. Corretor, visita e venda voltam a aparecer sozinhos quando ele responder.
         </p>
       )}
       <Detalhe>
@@ -116,36 +116,45 @@ export function CustoPorVisitaTable({ r }: { r: AtendimentoResumo }) {
     (s, a) => ({
       gasto: s.gasto + (a.gasto ?? 0),
       leads: s.leads + a.leads,
+      agendados: s.agendados + a.agendados,
       noCv: s.noCv + a.noCv,
       visitas: s.visitas + a.visitas,
       vendas: s.vendas + a.vendas,
     }),
-    { gasto: 0, leads: 0, noCv: 0, visitas: 0, vendas: 0 },
+    { gasto: 0, leads: 0, agendados: 0, noCv: 0, visitas: 0, vendas: 0 },
   );
+  // Sem o CV as colunas dele somem: "–" em "No CV" lia como "ninguém chegou
+  // ao CV". Agendadas vem do CRM e fica sempre.
+  const cv = r.cvDisponivel;
   const th = "px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]";
   const td = "px-3 py-2 text-right tabular-nums";
+  const custo = (v: number | null, vazio: string) =>
+    v != null ? dinheiro(v, r.moeda) : <span className="font-normal text-[color:var(--muted-foreground)]">{vazio}</span>;
   return (
     <section
-      aria-label="Custo por visita"
+      aria-label="Custo por agendamento e visita"
       className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color:var(--card)]/70 p-6 backdrop-blur"
     >
-      <Titulo>Custo por visita, por anúncio</Titulo>
-      {!r.cvDisponivel && (
+      <Titulo>{cv ? "Custo por agendamento e visita, por anúncio" : "Custo por agendamento, por anúncio"}</Titulo>
+      {!cv && (
         <p className="mb-3 text-xs text-[color:var(--muted-foreground)]">
-          Visitas e vendas aparecem quando os dados do CV terminarem de carregar.
+          O CV não respondeu agora. No CV, visitas, vendas e custo por visita voltam a aparecer sozinhos quando ele
+          responder.
         </p>
       )}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-sm">
+        <table className={`w-full text-sm ${cv ? "min-w-[900px]" : "min-w-[600px]"}`}>
           <thead>
             <tr className="border-b border-[color:var(--border)]">
               <th className={th.replace("text-right", "text-left")}>Anúncio</th>
               <th className={th}>Investimento</th>
               <th className={th}>Leads</th>
-              <th className={th}>No CV</th>
-              <th className={th}>Visitas</th>
-              <th className={th}>Vendas</th>
-              <th className={th}>Custo por visita</th>
+              <th className={th}>Agendadas</th>
+              <th className={th}>Custo por agendamento</th>
+              {cv && <th className={th}>No CV</th>}
+              {cv && <th className={th}>Visitas</th>}
+              {cv && <th className={th}>Vendas</th>}
+              {cv && <th className={th}>Custo por visita</th>}
             </tr>
           </thead>
           <tbody>
@@ -169,16 +178,12 @@ export function CustoPorVisitaTable({ r }: { r: AtendimentoResumo }) {
                 </td>
                 <td className={td}>{a.gasto == null ? "–" : dinheiro(a.gasto, r.moeda)}</td>
                 <td className={td}>{int(a.leads)}</td>
-                <td className={td}>{r.cvDisponivel ? int(a.noCv) : "–"}</td>
-                <td className={td}>{r.cvDisponivel ? int(a.visitas) : "–"}</td>
-                <td className={td}>{r.cvDisponivel ? int(a.vendas) : "–"}</td>
-                <td className={td + " font-semibold"}>
-                  {a.custoPorVisita != null ? (
-                    dinheiro(a.custoPorVisita, r.moeda)
-                  ) : (
-                    <span className="font-normal text-[color:var(--muted-foreground)]">sem visita</span>
-                  )}
-                </td>
+                <td className={td}>{int(a.agendados)}</td>
+                <td className={td + " font-semibold"}>{custo(a.custoPorAgendamento, "sem agendamento")}</td>
+                {cv && <td className={td}>{int(a.noCv)}</td>}
+                {cv && <td className={td}>{int(a.visitas)}</td>}
+                {cv && <td className={td}>{int(a.vendas)}</td>}
+                {cv && <td className={td + " font-semibold"}>{custo(a.custoPorVisita, "sem visita")}</td>}
               </tr>
             ))}
           </tbody>
@@ -187,24 +192,27 @@ export function CustoPorVisitaTable({ r }: { r: AtendimentoResumo }) {
               <td className="px-3 py-2">Total</td>
               <td className={td}>{dinheiro(tot.gasto, r.moeda)}</td>
               <td className={td}>{int(tot.leads)}</td>
-              <td className={td}>{r.cvDisponivel ? int(tot.noCv) : "–"}</td>
-              <td className={td}>{r.cvDisponivel ? int(tot.visitas) : "–"}</td>
-              <td className={td}>{r.cvDisponivel ? int(tot.vendas) : "–"}</td>
+              <td className={td}>{int(tot.agendados)}</td>
               <td className={td}>
-                {tot.visitas > 0 && tot.gasto > 0 ? (
-                  dinheiro(tot.gasto / tot.visitas, r.moeda)
-                ) : (
-                  <span className="font-normal text-[color:var(--muted-foreground)]">sem visita</span>
-                )}
+                {custo(tot.agendados > 0 && tot.gasto > 0 ? tot.gasto / tot.agendados : null, "sem agendamento")}
               </td>
+              {cv && <td className={td}>{int(tot.noCv)}</td>}
+              {cv && <td className={td}>{int(tot.visitas)}</td>}
+              {cv && <td className={td}>{int(tot.vendas)}</td>}
+              {cv && (
+                <td className={td}>
+                  {custo(tot.visitas > 0 && tot.gasto > 0 ? tot.gasto / tot.visitas : null, "sem visita")}
+                </td>
+              )}
             </tr>
           </tfoot>
         </table>
       </div>
       <Detalhe>
         <p className="mt-3 text-xs text-[color:var(--muted-foreground)]">
-          Investimento é o gasto do anúncio na Meta no período. Visita é visita realizada no CV, não só
-          agendada. Custo por visita é o investimento dividido pelas visitas do anúncio.
+          Investimento é o gasto do anúncio na Meta no período. Agendada é o lead que a Flávia converteu ou
+          que já tem visita no CV. Visita é visita realizada no CV, não só agendada. Os custos são o
+          investimento dividido pelas agendadas e pelas visitas do anúncio.
         </p>
       </Detalhe>
     </section>
