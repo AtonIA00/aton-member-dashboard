@@ -41,9 +41,9 @@ const BRAND = {
   red: "#dc2626",
 } as const;
 
-/** Mesmos cortes do heatClass (quartis do portfólio, 2026-07). */
+/** Mesmos cortes do heatClass (quartis do portfólio, 2026-07; conversão 2026-10). */
 const TH = {
-  conv: [4, 9, 15] as const,
+  conv: [4, 8, 10] as const,
   mql: [10, 20, 30] as const,
   inter: [50, 65, 75] as const,
 };

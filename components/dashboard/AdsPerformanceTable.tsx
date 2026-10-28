@@ -84,7 +84,12 @@ function heatClass(v: number, thresholds: [number, number, number]): string {
 // p50/p75): interação 50/66/74 · MQL 11/20/30 · conversão 4/9/14. Recalibrar
 // semestralmente conforme a carteira evolui. Os cortes antigos ([_,_,30]/[_,_,
 // 50]/[_,_,80]) eram inatingíveis — quase ninguém ficava verde.
-const PCT_AGEND_THRESHOLDS: [number, number, number] = [4, 9, 15];
+// Conversão recalibrada em 2026-10-28 (90 dias, 21 workspaces com ≥50 leads,
+// p25/p50/p75 = 4,2/8,5/9,8): 11–14% saía amarelo estando no top 25%.
+const PCT_AGEND_THRESHOLDS: [number, number, number] = [4, 8, 10];
+// Abaixo disso, uma conversão a mais ou a menos mexe demais na taxa: a pílula
+// mantém a cor, mas apagada, e o title explica "x de n leads".
+const AMOSTRA_MINIMA = 10;
 const PCT_MQL_THRESHOLDS: [number, number, number] = [10, 20, 30];
 const PCT_INTERACAO_THRESHOLDS: [number, number, number] = [50, 65, 75];
 
@@ -265,7 +270,11 @@ export function AdsPerformanceTable({
                   {r.agendados.toLocaleString("pt-BR")}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <HeatPill v={r.pctAgendamento} thresholds={PCT_AGEND_THRESHOLDS} />
+                  <HeatPill
+                    v={r.pctAgendamento}
+                    thresholds={PCT_AGEND_THRESHOLDS}
+                    amostra={{ n: r.agendados, total: r.total }}
+                  />
                   {r.pctAgendamentoDelta && <DeltaLine delta={r.pctAgendamentoDelta} />}
                 </td>
                 <td className="px-4 py-3 text-right">
@@ -997,15 +1006,25 @@ function DeltaLine({ delta }: { delta: Delta }) {
 function HeatPill({
   v,
   thresholds,
+  amostra,
 }: {
   v: number;
   thresholds: [number, number, number];
+  /** Contagem por trás da taxa. Com menos de AMOSTRA_MINIMA leads a pílula fica apagada. */
+  amostra?: { n: number; total: number };
 }) {
+  const pequena = amostra != null && amostra.total > 0 && amostra.total < AMOSTRA_MINIMA;
   return (
     <span
+      title={
+        pequena
+          ? `${amostra.n} de ${amostra.total} ${amostra.total === 1 ? "lead" : "leads"}, amostra pequena`
+          : undefined
+      }
       className={
         "inline-block min-w-[3.25rem] rounded px-2 py-1 text-center text-[11px] font-bold tabular-nums " +
-        heatClass(v, thresholds)
+        heatClass(v, thresholds) +
+        (pequena ? " cursor-help opacity-50" : "")
       }
     >
       {(v * 100).toFixed(1).replace(".", ",")}
