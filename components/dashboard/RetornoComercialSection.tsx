@@ -26,8 +26,11 @@ type State =
 // Tempo de espera em MINUTOS ÚTEIS (Seg–Sáb 08–18). Pode ser grande — o
 // Core manda coisas como 4992 (~8 dias úteis, quando um retorno atrasou
 // muito). 1 dia útil = 10h = 600 min úteis. Régua: min → h → dias úteis.
-function fmtEsperaUtil(min: number): string {
-  if (!min || min <= 0) return "—";
+// `medido` = houve caso com tempo medido (dentro_sla > 0). Mediana 0 com
+// medição é resposta no mesmo minuto útil (ou lead e corretor fora do
+// horário), não ausência de dado: "menos de 1 min", não "—".
+function fmtEsperaUtil(min: number, medido = false): string {
+  if (!min || min <= 0) return medido ? "menos de 1 min" : "—";
   if (min < 60) return `${min}min`;
   if (min < 600) {
     const h = Math.floor(min / 60);
@@ -324,7 +327,7 @@ function ReadyView({
 
         {!porGrupo && (
         <StatCard
-          value={fmtEsperaUtil(data.mediana_util_min)}
+          value={fmtEsperaUtil(data.mediana_util_min, data.dentro_sla > 0)}
           label="Tempo médio de retorno"
           sub={`hora útil · meta ${data.sla_min}min`}
           accent="neutral"
@@ -417,7 +420,7 @@ function GrupoCard({ g, slaMin }: { g: GrupoRetorno; slaMin: number }) {
         <dd className="text-right font-semibold tabular-nums text-[color:var(--foreground)]">{g.aguardando}</dd>
         <dt className="text-[color:var(--muted-foreground)]">Tempo médio</dt>
         <dd className="text-right font-semibold tabular-nums text-[color:var(--foreground)]">
-          {fmtEsperaUtil(g.mediana_util_min)}
+          {fmtEsperaUtil(g.mediana_util_min, g.dentro_sla > 0)}
         </dd>
       </dl>
       <div className="mt-1.5 truncate text-[11px] text-[color:var(--muted-foreground)]/70">
