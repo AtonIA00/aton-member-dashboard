@@ -18,6 +18,25 @@ export type LeadAguardando = {
   /** String JÁ formatada pelo Core pra exibição, ex.: "23/06, 14:50" (NÃO é ISO).
    *  A UI exibe crua. */
   agendado_em: string | null;
+  /** Grupo de passados ao time (chave de GrupoRetorno). Ausente no payload antigo. */
+  grupo?: string | null;
+  /** Etapa do CRM do lead, como está lá (ex.: "Especialista"). */
+  etapa?: string | null;
+};
+
+/** Um recorte dos passados ao time (29/10/2026): o card contava só Agendado,
+ *  e quem pediu entrada, parcela ou financiamento (Especialista e afins)
+ *  ficava fora do retorno. Mesma régua do topo, por grupo. */
+export type GrupoRetorno = {
+  /** "agendados" | "condicoes" hoje; a UI usa o rótulo, não a chave. */
+  chave: string;
+  rotulo: string;
+  total: number;
+  retornados: number;
+  aguardando: number;
+  nao_localizados: number;
+  dentro_sla: number;
+  mediana_util_min: number;
 };
 
 export type RetornoComercial = {
@@ -38,6 +57,10 @@ export type RetornoComercial = {
   dentro_sla: number;
   /** Mediana do tempo de retorno (min de hora útil) dos retornados com tempo. */
   mediana_util_min: number;
-  /** Lista dos que aguardam, pro card clicável. */
+  /** Lista dos que aguardam, pro card clicável. Com `grupos`, cobre todos os
+   *  passados ao time, não só os Agendados. */
   lista_aguardando: LeadAguardando[];
+  /** Passados ao time por grupo. Vazio = payload antigo (só Agendado): a UI
+   *  cai no layout de um bloco só, pelos campos de topo. */
+  grupos: GrupoRetorno[];
 };

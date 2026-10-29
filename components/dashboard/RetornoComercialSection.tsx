@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { RetornoComercial } from "@/lib/retorno-comercial/types";
+import type { GrupoRetorno, RetornoComercial } from "@/lib/retorno-comercial/types";
 
 type HmacParams = {
   workspace_id: string;
@@ -70,6 +70,12 @@ function nomeDisplay(nome: string | null, telefone: string | null): string {
   return telefone ? fmtTelefone(telefone) : "Lead sem nome";
 }
 
+// Com `grupos` (29/10/2026) a base é todo lead passado ao time; sem, só os
+// Agendados dos campos de topo (payload antigo do Core).
+function totalPassados(d: RetornoComercial): number {
+  return d.grupos.length ? d.grupos.reduce((s, g) => s + g.total, 0) : d.agendados;
+}
+
 export function RetornoComercialSection({ enabled, initialVisible, hmac }: Props) {
   const [visible, setVisible] = useState(initialVisible);
   const [state, setState] = useState<State>(
@@ -105,7 +111,7 @@ export function RetornoComercialSection({ enabled, initialVisible, hmac }: Props
         }
         const data = (await res.json()) as RetornoComercial;
         if (cancelled) return;
-        if (!data || data.agendados <= 0) {
+        if (!data || totalPassados(data) <= 0) {
           setState({ kind: "hidden" });
           return;
         }
@@ -243,11 +249,19 @@ function ReadyView({
   // Base "localizados" = quem tem conversa vinculada (exclui gap de dado).
   const localizados = data.retornados + data.aguardando;
   const pctRetornados = localizados > 0 ? Math.round((data.retornados / localizados) * 100) : null;
-  const temAguardando = data.aguardando > 0;
+  const porGrupo = data.grupos.length > 0;
+  const aguardando = porGrupo ? data.grupos.reduce((s, g) => s + g.aguardando, 0) : data.aguardando;
+  const temAguardando = aguardando > 0;
+  const comEtapa = data.lista_aguardando.some((l) => l.etapa);
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr_1fr]">
+      <div
+        className={
+          "grid grid-cols-1 gap-4 " +
+          (porGrupo && data.grupos.length !== 2 ? "lg:grid-cols-[1.4fr_1fr]" : "lg:grid-cols-[1.4fr_1fr_1fr]")
+        }
+      >
         {/* Herói acionável */}
         <button
           type="button"
@@ -266,7 +280,7 @@ function ReadyView({
           />
           <div className="flex items-baseline gap-2">
             <span className="font-[family-name:var(--font-montserrat)] text-4xl font-bold leading-none text-[color:var(--foreground)]">
-              {data.aguardando}
+              {aguardando}
             </span>
             {temAguardando && (
               <span className="text-[11px] font-semibold text-[color:var(--primary)] opacity-0 transition-opacity group-hover:opacity-100">
@@ -278,13 +292,22 @@ function ReadyView({
             {temAguardando ? "Aguardando seu retorno" : "Tudo retornado 🎉"}
           </div>
           <p className="mt-1.5 text-[11px] leading-relaxed text-[color:var(--muted-foreground)]/80">
-            {temAguardando
-              ? "Leads agendados que ainda não receberam mensagem do seu time pela plataforma. Toque para ver e agir."
-              : "Todos os leads agendados na janela já receberam um retorno do time pela plataforma."}
+            {porGrupo
+              ? temAguardando
+                ? "Leads passados ao seu time (agendados e pedidos de condições) que ainda não receberam mensagem pela plataforma. Toque para ver e agir."
+                : "Todos os leads passados ao seu time na janela já receberam um retorno pela plataforma."
+              : temAguardando
+                ? "Leads agendados que ainda não receberam mensagem do seu time pela plataforma. Toque para ver e agir."
+                : "Todos os leads agendados na janela já receberam um retorno do time pela plataforma."}
           </p>
         </button>
 
-        {/* Secundário: retornados */}
+        {/* Por grupo: um card para cada tipo de passagem ao time. */}
+        {porGrupo &&
+          data.grupos.map((g) => <GrupoCard key={g.chave} g={g} slaMin={data.sla_min} />)}
+
+        {/* Payload antigo: retornados + tempo médio dos Agendados. */}
+        {!porGrupo && (
         <StatCard
           value={
             pctRetornados !== null ? `${data.retornados} (${pctRetornados}%)` : String(data.retornados)
@@ -297,18 +320,20 @@ function ReadyView({
           }
           accent="green"
         />
+        )}
 
-        {/* Secundário: tempo médio */}
+        {!porGrupo && (
         <StatCard
           value={fmtEsperaUtil(data.mediana_util_min)}
           label="Tempo médio de retorno"
           sub={`hora útil · meta ${data.sla_min}min`}
           accent="neutral"
         />
+        )}
       </div>
 
       {/* Lista clicável dos que aguardam */}
-      {showList && data.aguardando > 0 && (
+      {showList && aguardando > 0 && (
         <div className="mt-4 overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color:var(--card)]/70 backdrop-blur">
           <div className="border-b border-[color:var(--border)] px-5 py-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">
             Leads aguardando retorno
@@ -325,7 +350,8 @@ function ReadyView({
                     <ThMini>Nome</ThMini>
                     <ThMini>Telefone</ThMini>
                     <ThMini>Campanha</ThMini>
-                    <ThMini>Agendou em</ThMini>
+                    {comEtapa && <ThMini>Etapa</ThMini>}
+                    <ThMini>{porGrupo ? "Passou ao time em" : "Agendou em"}</ThMini>
                   </tr>
                 </thead>
                 <tbody>
@@ -343,6 +369,11 @@ function ReadyView({
                       <td className="max-w-[220px] truncate px-4 py-2.5 text-xs text-[color:var(--foreground)]/90">
                         {l.campanha ?? "—"}
                       </td>
+                      {comEtapa && (
+                        <td className="whitespace-nowrap px-4 py-2.5 text-xs text-[color:var(--foreground)]/90">
+                          {l.etapa ?? ""}
+                        </td>
+                      )}
                       <td className="whitespace-nowrap px-4 py-2.5 text-xs text-[color:var(--muted-foreground)] tabular-nums">
                         {l.agendado_em ?? "—"}
                       </td>
@@ -357,9 +388,43 @@ function ReadyView({
 
       <p className="mt-3 text-[11px] leading-relaxed text-[color:var(--muted-foreground)]/70">
         Considera o retorno registrado <strong className="font-semibold">pela plataforma (Aton)</strong>.
-        Horário comercial Seg–Sáb 08–18. Contatos feitos por outros canais não entram nesta conta.
+        Horário comercial de segunda a sábado, das 8h às 18h. Contatos feitos por outros canais não entram nesta conta.
       </p>
     </>
+  );
+}
+
+// Um grupo de passados ao time: retornados sobre os localizados, quantos
+// ainda aguardam e o tempo médio (mediana em hora útil) daquele grupo.
+function GrupoCard({ g, slaMin }: { g: GrupoRetorno; slaMin: number }) {
+  const localizados = g.retornados + g.aguardando;
+  const pct = localizados > 0 ? Math.round((g.retornados / localizados) * 100) : null;
+  return (
+    <div className="relative overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color:var(--card)]/70 p-5 backdrop-blur">
+      <div
+        aria-hidden
+        className="absolute left-0 top-0 h-full w-[3px] bg-gradient-to-b from-[#10b981] to-transparent opacity-80"
+      />
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--muted-foreground)]">
+        {g.rotulo} · {g.total}
+      </div>
+      <div className="mt-2 font-[family-name:var(--font-montserrat)] text-3xl font-bold leading-none text-[color:var(--foreground)]">
+        {pct !== null ? `${g.retornados} (${pct}%)` : String(g.retornados)}
+      </div>
+      <div className="mt-1.5 text-[11px] text-[color:var(--muted-foreground)]/80">retornados pelo time</div>
+      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+        <dt className="text-[color:var(--muted-foreground)]">Aguardando</dt>
+        <dd className="text-right font-semibold tabular-nums text-[color:var(--foreground)]">{g.aguardando}</dd>
+        <dt className="text-[color:var(--muted-foreground)]">Tempo médio</dt>
+        <dd className="text-right font-semibold tabular-nums text-[color:var(--foreground)]">
+          {fmtEsperaUtil(g.mediana_util_min)}
+        </dd>
+      </dl>
+      <div className="mt-1.5 truncate text-[11px] text-[color:var(--muted-foreground)]/70">
+        hora útil · meta {slaMin}min
+        {g.nao_localizados > 0 ? ` · ${g.nao_localizados} sem conversa vinculada` : ""}
+      </div>
+    </div>
   );
 }
 

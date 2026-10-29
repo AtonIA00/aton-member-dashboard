@@ -1,5 +1,5 @@
 import "server-only";
-import type { LeadAguardando, RetornoComercial } from "./types";
+import type { GrupoRetorno, LeadAguardando, RetornoComercial } from "./types";
 
 // Adapter da seção "Retorno do time comercial" (v1 — Opção 1: endpoint
 // interno do Aton Core).
@@ -56,9 +56,28 @@ function parseCoreResponse(json: unknown): RetornoComercial | null {
       telefone: str(x.telefone),
       campanha: str(x.campanha),
       agendado_em: str(x.agendado_em),
+      grupo: str(x.grupo),
+      etapa: str(x.etapa),
     };
   });
+  const gruposRaw = Array.isArray(o.grupos) ? o.grupos : [];
+  const grupos: GrupoRetorno[] = gruposRaw
+    .map((r) => {
+      const x = (r ?? {}) as Record<string, unknown>;
+      return {
+        chave: str(x.chave) ?? "",
+        rotulo: str(x.rotulo) ?? str(x.chave) ?? "",
+        total: num(x.total),
+        retornados: num(x.retornados),
+        aguardando: num(x.aguardando),
+        nao_localizados: num(x.nao_localizados),
+        dentro_sla: num(x.dentro_sla),
+        mediana_util_min: num(x.mediana_util_min),
+      };
+    })
+    .filter((g) => g.chave && g.total > 0);
   return {
+    grupos,
     janela_dias: num(o.janela_dias, 14),
     sla_min: num(o.sla_min, 30),
     agendados: num(o.agendados),
@@ -87,9 +106,13 @@ function mockData(): RetornoComercial {
     dentro_sla: 7,
     mediana_util_min: 4992,
     lista_aguardando: [
-      { nome: "Carolina Antoniazzi", telefone: "+5527999844698", campanha: "Royal View", agendado_em: "23/06, 14:50" },
-      { nome: "", telefone: "+559188208412", campanha: "Royal View", agendado_em: "29/06, 13:46" },
-      { nome: "Catarine 🍒", telefone: "+5527998921801", campanha: "Royal View", agendado_em: "01/07, 13:36" },
+      { nome: "Carolina Antoniazzi", telefone: "+5527999844698", campanha: "Royal View", agendado_em: "23/06, 14:50", grupo: "agendados", etapa: "Agendado" },
+      { nome: "", telefone: "+559188208412", campanha: "Royal View", agendado_em: "29/06, 13:46", grupo: "condicoes", etapa: "Especialista" },
+      { nome: "Catarine 🍒", telefone: "+5527998921801", campanha: "Royal View", agendado_em: "01/07, 13:36", grupo: "condicoes", etapa: "Financeiro" },
+    ],
+    grupos: [
+      { chave: "agendados", rotulo: "Agendados", total: 5, retornados: 4, aguardando: 1, nao_localizados: 0, dentro_sla: 3, mediana_util_min: 20 },
+      { chave: "condicoes", rotulo: "Pediram condições", total: 8, retornados: 5, aguardando: 2, nao_localizados: 1, dentro_sla: 4, mediana_util_min: 4992 },
     ],
   };
 }
