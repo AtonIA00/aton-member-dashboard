@@ -109,8 +109,10 @@ export function AdsPerformanceTable({
   const adOf = (r: AdsPerfRow) => (metaAds ? metaAds.ads[r.idAnuncio] : undefined);
 
   const sorted = useMemo(() => {
-    // Sempre manter "Sem ID" (isUnknownId) no topo, conforme spec.
-    const unknown = rows.filter((r) => r.isUnknownId);
+    // Origens sem anúncio (site etc.) fixas no topo; "Origem não
+    // identificada" fixa no fim (29/10/2026). A ordenação só mexe nos anúncios.
+    const unknown = rows.filter((r) => r.isUnknownId && !r.naoIdentificada);
+    const naoIdentificada = rows.filter((r) => r.naoIdentificada);
     const known = [...rows.filter((r) => !r.isUnknownId)];
     known.sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
@@ -137,7 +139,7 @@ export function AdsPerformanceTable({
           return (a.total - b.total) * dir;
       }
     });
-    return [...unknown, ...known];
+    return [...unknown, ...known, ...naoIdentificada];
   }, [rows, sortCol, sortDir, metaAds]);
 
   function toggle(col: SortCol) {

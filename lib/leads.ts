@@ -102,6 +102,8 @@ export type AdsPerfRow = {
   pctInteracao: number;
   total: number;
   isUnknownId: boolean;
+  /** Linha "Origem não identificada": vai por último na tabela e no export. */
+  naoIdentificada?: boolean;
   /** Deltas vs. período anterior — igual aos KPIs. Ausentes no "Todo período".
    *  Os de % só existem quando o anúncio também teve leads no período anterior
    *  (senão não há taxa comparável). */
@@ -600,6 +602,7 @@ export function computeAdsPerformance(leads: LeadRow[]): AdsPerfRow[] {
   type Bucket = {
     idAnuncio: string;
     isUnknownId: boolean;
+    naoIdentificada: boolean;
     total: number;
     agendados: number;
     mqlSim: number;
@@ -621,7 +624,15 @@ export function computeAdsPerformance(leads: LeadRow[]): AdsPerfRow[] {
     const key = origem ? `__${origem.chave}__` : raw;
     let b = map.get(key);
     if (!b) {
-      b = { idAnuncio: origem ? origem.rotulo : raw, isUnknownId, total: 0, agendados: 0, mqlSim: 0, novos: 0 };
+      b = {
+        idAnuncio: origem ? origem.rotulo : raw,
+        isUnknownId,
+        naoIdentificada: origem?.chave === "origem_nao_identificada",
+        total: 0,
+        agendados: 0,
+        mqlSim: 0,
+        novos: 0,
+      };
       map.set(key, b);
     }
     b.total++;
@@ -645,16 +656,15 @@ export function computeAdsPerformance(leads: LeadRow[]): AdsPerfRow[] {
       pctInteracao: safeDiv(interagiram, b.total),
       total: b.total,
       isUnknownId: b.isUnknownId,
+      naoIdentificada: b.naoIdentificada,
     });
   }
 
-  // Linhas sem anúncio continuam no topo (spec original), agora uma por
-  // origem, entre elas pelo volume.
-  rows.sort((a, b) => {
-    if (a.isUnknownId && !b.isUnknownId) return -1;
-    if (!a.isUnknownId && b.isUnknownId) return 1;
-    return b.total - a.total;
-  });
+  // Origens conhecidas sem anúncio (site etc.) no topo, depois os anúncios,
+  // e "Origem não identificada" por último (pedido do Murillo, 29/10/2026).
+  // Dentro de cada faixa, pelo volume.
+  const faixa = (r: AdsPerfRow) => (r.naoIdentificada ? 2 : r.isUnknownId ? 0 : 1);
+  rows.sort((a, b) => faixa(a) - faixa(b) || b.total - a.total);
 
   let nextRank = 1;
   for (const r of rows) {
