@@ -297,10 +297,10 @@ function ReadyView({
           <p className="mt-1.5 text-[11px] leading-relaxed text-[color:var(--muted-foreground)]/80">
             {porGrupo
               ? temAguardando
-                ? "Leads passados ao seu time (agendados e pedidos de condições) que ainda não receberam mensagem pela plataforma. Toque para ver e agir."
+                ? "Leads passados ao seu time (agendados e pedidos de condições) que ainda não receberam mensagem nem nota do seu time na plataforma. Toque para ver e agir."
                 : "Todos os leads passados ao seu time na janela já receberam um retorno pela plataforma."
               : temAguardando
-                ? "Leads agendados que ainda não receberam mensagem do seu time pela plataforma. Toque para ver e agir."
+                ? "Leads agendados que ainda não receberam mensagem nem nota do seu time na plataforma. Toque para ver e agir."
                 : "Todos os leads agendados na janela já receberam um retorno do time pela plataforma."}
           </p>
         </button>
@@ -391,7 +391,7 @@ function ReadyView({
 
       <p className="mt-3 text-[11px] leading-relaxed text-[color:var(--muted-foreground)]/70">
         Considera o retorno registrado <strong className="font-semibold">pela plataforma (Aton)</strong>.
-        Horário comercial de segunda a sábado, das 8h às 18h. Contatos feitos por outros canais não entram nesta conta.
+        Vale a mensagem no chat ou a nota que o seu time deixa na conversa (por exemplo, uma ligação registrada), pela hora em que foi registrada. Horário comercial de segunda a sábado, das 8h às 18h. Contato feito por outro canal sem nota na conversa não entra nesta conta.
       </p>
     </>
   );
