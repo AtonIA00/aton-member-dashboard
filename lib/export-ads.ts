@@ -315,7 +315,7 @@ function summaryPairs(
 ): Array<{ label: string; value: string; sub: string }> {
   const c = meta.currency;
   return [
-    { label: "Investimento", value: money(meta.totalSpend, c), sub: "Meta Ads no período" },
+    { label: "Investimento", value: money(meta.totalSpend, c), sub: meta.googleSpend ? `Meta ${money(meta.totalSpend - meta.googleSpend, c)} + Google ${money(meta.googleSpend, c)}` : "Meta Ads no período" },
     { label: "CPL real", value: costPer(meta.totalSpend, kpis.total, c), sub: `${int(kpis.total)} leads na base` },
     { label: "Custo por MQL", value: costPer(meta.totalSpend, kpis.mqlSim, c), sub: `${int(kpis.mqlSim)} qualificados` },
     { label: "Custo por convertido", value: costPer(meta.totalSpend, kpis.agendadoPlus, c), sub: `${int(kpis.agendadoPlus)} convertidos` },

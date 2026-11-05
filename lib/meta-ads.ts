@@ -144,7 +144,7 @@ async function getAccountsForWorkspace(workspaceId: string): Promise<AccountRow[
 const baseStartCache = new Map<string, { ts: number; day: string | null }>();
 const BASE_START_TTL = 60 * 60_000;
 
-async function getBaseStartForWorkspace(workspaceId: string): Promise<string | null> {
+export async function getBaseStartForWorkspace(workspaceId: string): Promise<string | null> {
   const now = Date.now();
   const hit = baseStartCache.get(workspaceId);
   if (hit && now - hit.ts < BASE_START_TTL) return hit.day;

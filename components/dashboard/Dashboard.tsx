@@ -27,6 +27,7 @@ import { DetalhesToggle, DETALHES_ROOT_ID } from "@/components/DetalhesToggle";
 import { getMostrarDetalhes } from "@/lib/preferences";
 import { RetornoComercialSection } from "./RetornoComercialSection";
 import { getMetaAdsForWorkspace, toTablePayload, type MetaAdsForTable } from "@/lib/meta-ads";
+import { comGoogle, getGoogleAdsForWorkspace } from "@/lib/google-ads";
 import { getCvLeads, type CvLead } from "@/lib/cv-leads";
 import { montarAtendimento } from "@/lib/atendimento-modo";
 import { AtendimentoModoSection, CustoPorVisitaTable } from "./AtendimentoModoSection";
@@ -146,14 +147,16 @@ export async function Dashboard({
   const metaAdsPromise = isTonTab
     ? Promise.resolve(null)
     : dashboardDataPromise! // non-null: só é null quando isTonTab
-        .then((d) =>
-          getMetaAdsForWorkspace(
-            workspaceId,
-            resolvePeriod(periodKey, customFrom, customTo),
-            [...new Set(d.adsPerformance.filter((r) => !r.isUnknownId).map((r) => r.idAnuncio))],
-          ),
-        )
-        .then((d) => (d ? toTablePayload(d) : null))
+        .then(async (d) => {
+          const periodo = resolvePeriod(periodKey, customFrom, customTo);
+          const ids = [...new Set(d.adsPerformance.filter((r) => !r.isUnknownId).map((r) => r.idAnuncio))];
+          // Google Ads (05/11/2026) soma no investimento; falha dele não derruba a Meta.
+          const [meta, google] = await Promise.all([
+            getMetaAdsForWorkspace(workspaceId, periodo, ids).then((m) => (m ? toTablePayload(m) : null)),
+            getGoogleAdsForWorkspace(workspaceId, periodo).catch(() => null),
+          ]);
+          return comGoogle(meta, google, ids);
+        })
         .catch((e) => {
           console.error("[dashboard] meta-ads falhou (seguindo sem custo)", {
             workspaceId,

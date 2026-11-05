@@ -65,6 +65,8 @@ export type MetaAdsForTable = {
    * acesso por índice espalhado pelo código é convite a bug.
    */
   ads: Record<string, MetaAdTuple>;
+  /** Parte do totalSpend que veio do Google Ads (05/11/2026). Ausente = só Meta. */
+  googleSpend?: number;
 };
 
 /** Acesso NOMEADO à tupla do payload — use isto, não t[8]. */

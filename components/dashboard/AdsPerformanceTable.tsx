@@ -173,7 +173,7 @@ export function AdsPerformanceTable({
           {rows.length} {rows.length === 1 ? "anúncio" : "anúncios"}
           {metaAds && (
             <span className="ml-2 rounded-full bg-[color:var(--primary)]/10 px-2 py-0.5 text-[10px] font-bold text-[color:var(--primary)]">
-              + Meta Ads
+              {metaAds.googleSpend ? "+ Meta e Google Ads" : "+ Meta Ads"}
             </span>
           )}
         </span>
@@ -498,7 +498,9 @@ function CostSummaryStrip({ metaAds, kpis }: { metaAds: MetaAdsForTable; kpis: K
     {
       label: "Investimento",
       value: fmtMoney(metaAds.totalSpend, c),
-      sub: "Meta Ads no período",
+      sub: metaAds.googleSpend
+        ? `Meta ${fmtMoney(metaAds.totalSpend - metaAds.googleSpend, c)} + Google ${fmtMoney(metaAds.googleSpend, c)}`
+        : "Meta Ads no período",
       accent: true,
     },
     {
