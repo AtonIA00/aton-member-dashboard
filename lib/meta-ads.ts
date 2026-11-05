@@ -114,6 +114,9 @@ async function getAccountForWorkspace(workspaceId: string): Promise<AccountRow |
     .select("act_id, account_name, campanhas_excluidas")
     .eq("uchat_workspace_id", workspaceId)
     .eq("enabled", true)
+    // N contas por workspace (05/11/2026): aqui vale só a principal.
+    .eq("principal", true)
+    .limit(1)
     .maybeSingle<AccountRow>();
   if (error) {
     console.error("[meta-ads] account lookup", { workspaceId, message: error.message });
