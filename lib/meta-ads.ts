@@ -100,13 +100,18 @@ type AccountRow = {
    *  null/vazio = padrão: o investimento é o da conta inteira. */
   campanhas_excluidas: string[] | null;
 };
-const accountCache = new Map<string, { ts: number; row: AccountRow | null }>();
+const accountCache = new Map<string, { ts: number; rows: AccountRow[] }>();
 const ACCOUNT_TTL = 10 * 60_000;
 
-async function getAccountForWorkspace(workspaceId: string): Promise<AccountRow | null> {
+/**
+ * Contas ligadas à workspace, a principal primeiro. Desde 05/11/2026 uma
+ * workspace pode ter mais de uma (Ludvig: CNS + Chatô Meirelles); o gasto e os
+ * anúncios são a SOMA delas. Erro de leitura = [] (degrada como "sem conta").
+ */
+async function getAccountsForWorkspace(workspaceId: string): Promise<AccountRow[]> {
   const now = Date.now();
   const hit = accountCache.get(workspaceId);
-  if (hit && now - hit.ts < ACCOUNT_TTL) return hit.row;
+  if (hit && now - hit.ts < ACCOUNT_TTL) return hit.rows;
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -114,16 +119,15 @@ async function getAccountForWorkspace(workspaceId: string): Promise<AccountRow |
     .select("act_id, account_name, campanhas_excluidas")
     .eq("uchat_workspace_id", workspaceId)
     .eq("enabled", true)
-    // N contas por workspace (05/11/2026): aqui vale só a principal.
-    .eq("principal", true)
-    .limit(1)
-    .maybeSingle<AccountRow>();
+    .order("principal", { ascending: false })
+    .order("created_at", { ascending: true });
   if (error) {
     console.error("[meta-ads] account lookup", { workspaceId, message: error.message });
-    return null;
+    return [];
   }
-  accountCache.set(workspaceId, { ts: now, row: data ?? null });
-  return data ?? null;
+  const rows = (data as AccountRow[] | null) ?? [];
+  accountCache.set(workspaceId, { ts: now, rows });
+  return rows;
 }
 
 // ── Início da base de leads do workspace (cache 60min) ─────────────────────
@@ -487,11 +491,36 @@ export async function getMetaAdsForWorkspace(
   relevantAdIds: string[],
 ): Promise<MetaAdsData | null> {
   if (!isMetaAdsEnabled()) return null;
+  if (!process.env.META_SYSTEM_USER_TOKEN) return null;
+  const contas = await getAccountsForWorkspace(workspaceId);
+  if (contas.length === 0) return null;
+  if (contas.length === 1) return getMetaAdsForAccount(workspaceId, range, relevantAdIds, contas[0]);
+  // N contas (05/11/2026): soma os totais e junta os anúncios. Uma conta que
+  // falhar derruba a camada inteira (null), para nunca mostrar meio gasto.
+  const partes = await Promise.all(contas.map((c) => getMetaAdsForAccount(workspaceId, range, relevantAdIds, c)));
+  if (partes.some((x) => !x)) return null;
+  const ok = partes as MetaAdsData[];
+  const byAdId = new Map<string, MetaAdInsight>();
+  for (const x of ok) for (const [k, v] of x.byAdId) byAdId.set(k, v);
+  return {
+    actId: ok[0].actId,
+    accountName: ok.map((x) => x.accountName ?? x.actId).join(" + "),
+    currency: ok[0].currency,
+    byAdId,
+    totalSpend: ok.reduce((t, x) => t + x.totalSpend, 0),
+    totalImpressions: ok.reduce((t, x) => t + x.totalImpressions, 0),
+    totalLinkClicks: ok.reduce((t, x) => t + x.totalLinkClicks, 0),
+  };
+}
+
+async function getMetaAdsForAccount(
+  workspaceId: string,
+  range: DateRange,
+  relevantAdIds: string[],
+  account: AccountRow,
+): Promise<MetaAdsData | null> {
   const token = process.env.META_SYSTEM_USER_TOKEN;
   if (!token) return null;
-
-  const account = await getAccountForWorkspace(workspaceId);
-  if (!account) return null;
 
   const ids = [...new Set(relevantAdIds.map((s) => s.trim()).filter((s) => /^\d{5,25}$/.test(s)))];
   // Range do dash → parâmetro do Meta. "Todo período" (from/to nulos) é
@@ -686,8 +715,7 @@ export async function getEntradaPorAnuncio(
   const ids = [...new Set(adIds.map((s) => s.trim()).filter((s) => /^\d{5,25}$/.test(s)))];
   if (ids.length === 0) return null;
 
-  const account = await getAccountForWorkspace(workspaceId);
-  if (!account) return null;
+  if ((await getAccountsForWorkspace(workspaceId)).length === 0) return null;
 
   const agora = Date.now();
   const out = new Map<string, EntradaLead | null>();
@@ -764,11 +792,13 @@ export async function getCampanhaPorAnuncio(
   if (!token) return null;
   const ids = [...new Set(adIds.map((s) => s.trim()).filter((s) => /^\d{5,25}$/.test(s)))];
   if (ids.length === 0) return null;
-  const account = await getAccountForWorkspace(workspaceId);
-  if (!account) return null;
+  const contas = await getAccountsForWorkspace(workspaceId);
+  if (contas.length === 0) return null;
 
-  const contaNum = account.act_id.replace(/^act_/, "");
-  const excluidas = new Set((account.campanhas_excluidas ?? []).map(chaveCampanha).filter(Boolean));
+  // Qualquer conta ligada à workspace vale (N contas desde 05/11/2026).
+  const contaNums = new Set(contas.map((c) => c.act_id.replace(/^act_/, "")));
+  const contaNum = [...contaNums].sort().join("+");
+  const excluidas = new Set(contas.flatMap((c) => c.campanhas_excluidas ?? []).map(chaveCampanha).filter(Boolean));
   const agora = Date.now();
   const out = new Map<string, string>();
   const faltando: string[] = [];
@@ -799,7 +829,7 @@ export async function getCampanhaPorAnuncio(
           const camp = v?.campaign;
           const ok =
             v &&
-            String(v.account_id ?? "") === contaNum &&
+            contaNums.has(String(v.account_id ?? "")) &&
             camp?.name &&
             !excluidas.has(chaveCampanha(camp.id)) &&
             !excluidas.has(chaveCampanha(camp.name));
@@ -846,6 +876,8 @@ export type CoreAdInsight = {
   /** CRU, exatamente como a Meta devolve — é a chave do cruzamento com
    *  terrace360_leads_atonhub.id_anuncio no Core. Nunca formatar/truncar. */
   ad_id: string;
+  /** Conta de onde veio o anúncio (workspace com N contas, 05/11/2026). */
+  act_id?: string;
   ad_name: string | null;
   campaign_name: string | null;
   /** Estrutura — vem do próprio Insights, sem chamada extra. null quando a
@@ -1098,6 +1130,9 @@ export type CoreMetaInsights = {
   /** Entrega dia a dia: 7 dias completos até ontem + hoje (parcial_dia),
    *  fixo, não segue days/until. null = a Meta não respondeu. */
   entrega_diaria?: CoreEntregaCampanha[] | null;
+  /** Só com mais de uma conta ligada (05/11/2026): gasto e situação de cada
+   *  uma. act_id e conta do topo são os da principal; total e anúncios somam todas. */
+  contas?: { act_id: string; account_name: string | null; spend: number; conta: CoreContaStatus | null }[];
 };
 
 export type CoreEntregaDia = {
@@ -1295,11 +1330,125 @@ export async function getMetaInsightsForCore(
    *  leads do mesmo relatório cobriam períodos defasados em ~3 dias. */
   until?: string,
 ): Promise<CoreLookupResult> {
+  if (!process.env.META_SYSTEM_USER_TOKEN) return { ok: false, reason: "no_token" };
+  const contas = await getAccountsForWorkspace(workspaceId);
+  if (contas.length === 0) return { ok: false, reason: "not_mapped" };
+  if (contas.length === 1) return insightsDaContaParaCore(workspaceId, contas[0], days, until);
+  // N contas (05/11/2026, Ludvig): soma. Conta que falhar sem cache derruba o
+  // resultado (nunca meio gasto como se fosse o todo).
+  const partes = await Promise.all(contas.map((c) => insightsDaContaParaCore(workspaceId, c, days, until)));
+  const dados: CoreMetaInsights[] = [];
+  for (const x of partes) {
+    if (!x.ok) return x;
+    dados.push(x.data);
+  }
+  return { ok: true, data: somarInsightsCore(dados) };
+}
+
+/** Junta os payloads de várias contas da mesma workspace num só (mesmo contrato). */
+function somarInsightsCore(ps: CoreMetaInsights[]): CoreMetaInsights {
+  const base = ps[0];
+  const porAnuncio = ps.flatMap((p) => p.por_anuncio).sort((a, b) => b.spend - a.spend);
+  const t = porAnuncio.reduce(
+    (acc, a) => ({
+      spend: acc.spend + a.spend,
+      impressions: acc.impressions + a.impressions,
+      clicks: acc.clicks + a.clicks,
+      link_clicks: acc.link_clicks + a.link_clicks,
+      meta_leads: acc.meta_leads + a.meta_leads,
+      video_plays: acc.video_plays + a.video_plays,
+      video_views_3s: acc.video_views_3s + a.video_views_3s,
+      video_p75: acc.video_p75 + a.video_p75,
+      conversas_iniciadas: acc.conversas_iniciadas + a.conversas_iniciadas,
+    }),
+    { spend: 0, impressions: 0, clicks: 0, link_clicks: 0, meta_leads: 0, video_plays: 0, video_views_3s: 0, video_p75: 0, conversas_iniciadas: 0 },
+  );
+  const juntaNull = <T,>(xs: (T[] | null | undefined)[]): T[] | null =>
+    xs.every((x) => x == null) ? null : xs.flatMap((x) => x ?? []);
+  // Recorte: soma por chave; conversas null só se as duas linhas vierem null.
+  function somaRecorte<T extends { spend: number; conversas: number | null }>(
+    xs: (T[] | null | undefined)[],
+    chave: (r: T) => string,
+  ): T[] | null {
+    const todos = juntaNull(xs);
+    if (!todos) return null;
+    const m = new Map<string, Record<string, unknown>>();
+    for (const r of todos) {
+      const k = chave(r);
+      const v = m.get(k);
+      if (!v) {
+        m.set(k, { ...r });
+        continue;
+      }
+      for (const campo of ["spend", "impressions", "link_clicks"]) {
+        const a = (r as Record<string, unknown>)[campo];
+        if (typeof a === "number" && typeof v[campo] === "number") v[campo] = round2c((v[campo] as number) + a);
+      }
+      const cv = v.conversas as number | null;
+      v.conversas = cv === null && r.conversas === null ? null : (cv ?? 0) + (r.conversas ?? 0);
+    }
+    return ([...m.values()] as unknown as T[]).sort((a, b) => b.spend - a.spend);
+  }
+  const plats = juntaNull(ps.map((p) => p.total.por_plataforma));
+  let porPlataforma: CorePlatformSplit[] | null = null;
+  if (plats) {
+    const m = new Map<string, { spend: number; impressions: number }>();
+    for (const x of plats) {
+      const v = m.get(x.platform) ?? { spend: 0, impressions: 0 };
+      m.set(x.platform, { spend: v.spend + x.spend, impressions: v.impressions + x.impressions });
+    }
+    porPlataforma = [...m]
+      .map(([platform, v]) => ({ platform, spend: round2c(v.spend), impressions: v.impressions }))
+      .sort((a, b) => b.spend - a.spend);
+  }
+  const atividades = juntaNull(ps.map((p) => p.atividades));
+  return {
+    ...base,
+    account_name: ps.map((p) => p.account_name ?? p.act_id).join(" + "),
+    contas: ps.map((p) => ({ act_id: p.act_id, account_name: p.account_name, spend: p.total.spend, conta: p.conta ?? null })),
+    total: {
+      spend: round2c(t.spend),
+      impressions: t.impressions,
+      clicks: t.clicks,
+      link_clicks: t.link_clicks,
+      ctr: t.impressions > 0 ? round2c((t.link_clicks / t.impressions) * 100) : 0,
+      cpc: t.link_clicks > 0 ? round2c(t.spend / t.link_clicks) : 0,
+      meta_leads: t.meta_leads,
+      video_plays: t.video_plays,
+      video_views_3s: t.video_views_3s,
+      video_p75: t.video_p75,
+      video_ret_hook: t.video_plays > 0 ? round2c((t.video_views_3s / t.video_plays) * 100) : null,
+      video_ret_body: t.video_plays > 0 ? round2c((t.video_p75 / t.video_plays) * 100) : null,
+      por_plataforma: porPlataforma,
+      conversas_iniciadas: t.conversas_iniciadas,
+      custo_por_conversa: t.conversas_iniciadas > 0 ? round2c(t.spend / t.conversas_iniciadas) : null,
+    },
+    por_anuncio: porAnuncio,
+    campanhas: ps.flatMap((p) => p.campanhas),
+    stale: ps.some((p) => p.stale),
+    fetched_at: ps.map((p) => p.fetched_at).sort()[0],
+    atividades: atividades ? atividades.sort((a, b) => String(b.event_time).localeCompare(String(a.event_time))) : null,
+    recortes: ps.some((p) => p.recortes)
+      ? {
+          regiao: somaRecorte(ps.map((p) => p.recortes?.regiao), (r) => r.region),
+          plataforma_posicao: somaRecorte(ps.map((p) => p.recortes?.plataforma_posicao), (r) => `${r.publisher_platform}|${r.platform_position}`),
+          idade_genero: somaRecorte(ps.map((p) => p.recortes?.idade_genero), (r) => `${r.age}|${r.gender}`),
+        }
+      : undefined,
+    parcial: ps.some((p) => p.parcial),
+    campanhas_status: juntaNull(ps.map((p) => p.campanhas_status)),
+    entrega_diaria: juntaNull(ps.map((p) => p.entrega_diaria)),
+  };
+}
+
+async function insightsDaContaParaCore(
+  workspaceId: string,
+  account: AccountRow,
+  days: number,
+  until?: string,
+): Promise<CoreLookupResult> {
   const token = process.env.META_SYSTEM_USER_TOKEN;
   if (!token) return { ok: false, reason: "no_token" };
-
-  const account = await getAccountForWorkspace(workspaceId);
-  if (!account) return { ok: false, reason: "not_mapped" };
 
   const { de, ate } = lastNDaysRange(days, until);
   // A chave PRECISA ter a workspace e as exclusões: duas workspaces podem
@@ -1361,6 +1510,7 @@ export async function getMetaInsightsForCore(
       const tempoMedio = actionValue(r.video_avg_time_watched_actions);
       porAnuncio.push({
         ad_id: adId,
+        act_id: account.act_id,
         ad_name: (r.ad_name as string) ?? null,
         campaign_name: (r.campaign_name as string) ?? null,
         campaign_id: (r.campaign_id as string) ?? null,
@@ -2003,8 +2153,9 @@ export async function getAdPreviewForWorkspace(
   if (!token) return null;
   if (!/^\d{5,25}$/.test(adId)) return null;
 
-  const account = await getAccountForWorkspace(workspaceId);
-  if (!account) return null;
+  const contas = await getAccountsForWorkspace(workspaceId);
+  if (contas.length === 0) return null;
+  const actIds = new Set(contas.map((c) => c.act_id));
 
   const now = Date.now();
   const hit = previewCache.get(adId);
@@ -2022,7 +2173,7 @@ export async function getAdPreviewForWorkspace(
       )
     ).json()) as { account_id?: string; error?: unknown };
     clearTimeout(timer);
-    if (!owner.account_id || `act_${owner.account_id}` !== account.act_id) return null;
+    if (!owner.account_id || !actIds.has(`act_${owner.account_id}`)) return null;
 
     for (const fmt of ["MOBILE_FEED_STANDARD", "DESKTOP_FEED_STANDARD"]) {
       const c2 = new AbortController();
