@@ -310,7 +310,7 @@ function TabelaCampanhas({ linhas }: { linhas: OutboundLinha[] }) {
               <th className={th} title="Sobre os entregues">Respostas</th>
               <th className={th} title="Tocou em Parar, sobre os entregues">Opt-out</th>
               <th className={th} title="Handoff ao consultor, sobre os entregues">Avançaram</th>
-              <th className={th} title="Avançaram sobre quem respondeu">% das respostas</th>
+              <th className={th} title="Avançaram sobre quem respondeu">% Avanço</th>
               <th className={th} title="Mediana do tempo até a 1ª resposta">1ª resposta</th>
               <th className={th} title="Respostas na 1ª, 2ª, 3ª, 4ª e 5ª mensagem">Resposta na msg 1 a 5</th>
             </tr>
