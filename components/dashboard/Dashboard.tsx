@@ -130,7 +130,7 @@ export async function Dashboard({
   // não existe pro assinante de inbound, sem ruído visual nem custo.
   const outboundPromise: Promise<OutboundData | null> = isTonTab
     ? Promise.resolve(null)
-    : getOutboundData(workspaceId, resolvePeriod(periodKey, customFrom, customTo)).catch((e) => {
+    : getOutboundData(workspaceId, resolvePeriod(periodKey, customFrom, customTo), filters.campanha).catch((e) => {
         console.error("[dashboard] outbound falhou (seguindo sem a seção)", {
           workspaceId,
           error: e instanceof Error ? e.message : String(e),

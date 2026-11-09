@@ -212,6 +212,11 @@ function montarVisao(rows: RpcRow[]): OutboundVisao {
 export async function getOutboundData(
   workspaceId: string,
   range: DateRange,
+  /** nome_campanha do filtro do topo (o do lead). Vira as campanhas de
+   *  disparo que levam a ele: cada disparo pertence ao nome_campanha que
+   *  concentra a maioria de quem respondeu (outbound_campanha_do_lead).
+   *  Filtro sem disparo ligado = a seção some. */
+  campanhaLead?: string,
 ): Promise<OutboundData | null> {
   const supabase = getSupabaseAdmin();
 
@@ -227,12 +232,28 @@ export async function getOutboundData(
   }
   if (!count) return null;
 
+  let campanhas: string[] | null = null;
+  if (campanhaLead) {
+    const { data: mapa, error: errMapa } = await supabase.rpc("outbound_campanha_do_lead", {
+      p_ws: workspaceId,
+    });
+    if (errMapa) {
+      console.error("[outbound] outbound_campanha_do_lead falhou", { workspaceId, message: errMapa.message });
+      return null;
+    }
+    campanhas = ((mapa ?? []) as { campanha: string; nome_campanha: string }[])
+      .filter((m) => m.nome_campanha === campanhaLead)
+      .map((m) => m.campanha);
+    if (campanhas.length === 0) return null;
+  }
+
   const chamar = (incluirTestes: boolean) =>
     supabase.rpc("outbound_resumo", {
       p_ws: workspaceId,
       p_de: range.from,
       p_ate: range.to,
       p_incluir_testes: incluirTestes,
+      p_campanhas: campanhas,
     });
   const [sem, com] = await Promise.all([chamar(false), chamar(true)]);
   if (sem.error || com.error) {
