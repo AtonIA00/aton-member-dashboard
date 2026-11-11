@@ -34,6 +34,9 @@ type Props = {
   deltas: Deltas | null;
   /** Assinante registra visita e venda: mostra o bloco de pós-atendimento. */
   temPosAtendimento?: boolean;
+  /** Funil até a venda (Launch e Portovelas, 11/11/2026): o Convertido vira
+   *  Agendamentos, seguido de Reunião acontecida e Venda no mesmo strip. */
+  funilReuniao?: boolean;
 };
 
 function pct(n: number): string {
@@ -61,7 +64,13 @@ type Coluna = {
   notas?: ReactNode[];
 };
 
-export function KpiRow({ kpis, kpisPrevious, deltas, temPosAtendimento = false }: Props) {
+export function KpiRow({
+  kpis,
+  kpisPrevious,
+  deltas,
+  temPosAtendimento = false,
+  funilReuniao = false,
+}: Props) {
   // Ninguém respondeu: dividir por zero daria 0%, que o assinante leria como
   // "meu atendimento qualifica zero" quando o certo é "não houve conversa".
   const semInteracao = kpis.interagiram === 0;
@@ -116,9 +125,11 @@ export function KpiRow({ kpis, kpisPrevious, deltas, temPosAtendimento = false }
       ].filter(Boolean) as ReactNode[],
     },
     {
-      rotulo: "Convertido",
+      rotulo: funilReuniao ? "Agendamentos" : "Convertido",
       valor: pct(kpis.pctAgendamento),
-      apoio: `${int(kpis.agendadoPlus)} ${kpis.agendadoPlus === 1 ? "convertido" : "convertidos"}`,
+      apoio: funilReuniao
+        ? `${int(kpis.agendadoPlus)} ${kpis.agendadoPlus === 1 ? "agendamento" : "agendamentos"}`
+        : `${int(kpis.agendadoPlus)} ${kpis.agendadoPlus === 1 ? "convertido" : "convertidos"}`,
       meta: METAS.conversao,
       metaValor: kpis.total > 0 ? kpis.pctAgendamento : undefined,
       metaBase: kpis.total,
@@ -127,12 +138,41 @@ export function KpiRow({ kpis, kpisPrevious, deltas, temPosAtendimento = false }
     },
   ];
 
+  // Funil até a venda: cada taxa sobre a etapa anterior, como no
+  // pós-atendimento, mas no mesmo strip e sem o bloco separado.
+  if (funilReuniao) {
+    colunas.push(
+      {
+        rotulo: "Reunião acontecida",
+        valor: kpis.agendadoPlus > 0 ? pct(kpis.visitas / kpis.agendadoPlus) : "—",
+        apoio:
+          kpis.agendadoPlus > 0
+            ? `${int(kpis.visitas)} de ${int(kpis.agendadoPlus)} agendamentos`
+            : "nenhum agendamento no período",
+        notas: [
+          "Visita feita ou videochamada feita.",
+          ...(kpis.total > 0 ? [`Sobre o total de leads: ${pct(kpis.visitas / kpis.total)}`] : []),
+        ],
+      },
+      {
+        rotulo: "Venda",
+        valor: kpis.visitas > 0 ? pct(kpis.vendas / kpis.visitas) : "—",
+        apoio:
+          kpis.visitas > 0
+            ? `${int(kpis.vendas)} de ${int(kpis.visitas)} reuniões`
+            : "nenhuma reunião no período",
+        notas:
+          kpis.total > 0 ? [`Sobre o total de leads: ${pct(kpis.vendas / kpis.total)}`] : [],
+      },
+    );
+  }
+
   // Pós-atendimento: cada taxa sobre a ETAPA ANTERIOR, que é a pergunta que o
   // assinante faz ("de quem agendou, quantos foram?"; "de quem visitou,
   // quantos compraram?"). Sobre o total de leads, fica no Detalhes. Sem meta:
   // não há histórico para calibrar (o registro começou em 30/09/2026), então
   // não tem régua. Bloco separado porque o guia limita o strip a 5 colunas.
-  const pos: Coluna[] = temPosAtendimento
+  const pos: Coluna[] = temPosAtendimento && !funilReuniao
     ? [
         {
           rotulo: "Visita feita",
@@ -163,7 +203,11 @@ export function KpiRow({ kpis, kpisPrevious, deltas, temPosAtendimento = false }
         aria-label="Indicadores principais"
         className="kpi-strip rounded-[24px] border border-[color:var(--border)] bg-[color:var(--card)] py-6"
       >
-        <div className="grid grid-cols-2 gap-y-8 lg:grid-cols-4 lg:gap-y-0 lg:[&>*+*]:border-l lg:[&>*+*]:border-[color:var(--kpi-divisor)]">
+        <div
+          className={`grid grid-cols-2 gap-y-8 lg:gap-y-0 lg:[&>*+*]:border-l lg:[&>*+*]:border-[color:var(--kpi-divisor)] ${
+            colunas.length > 4 ? "lg:grid-cols-6" : "lg:grid-cols-4"
+          }`}
+        >
           {colunas.map((c) => (
             <ColunaKpi key={c.rotulo} c={c} />
           ))}

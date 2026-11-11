@@ -15,7 +15,7 @@ import { ChartCard } from "./ChartCard";
 import { EmptyChart } from "./EmptyChart";
 import { AtonTooltip } from "./tooltip";
 import { CHART_AXIS, CHART_COLORS } from "@/lib/chart-palette";
-import { GRUPO_LABEL } from "@/lib/classify";
+import { useRotuloGrupo } from "@/lib/nomenclatura";
 
 const HEIGHT = 320;
 
@@ -33,6 +33,7 @@ function formatDDMM(iso: string): string {
 }
 
 export function DailyVolumeChart({ data }: { data: DailyVolumePoint[] }) {
+  const rotuloGrupo = useRotuloGrupo();
   const totalLeads = data.reduce((s, p) => s + p.total, 0);
 
   return (
@@ -105,7 +106,7 @@ export function DailyVolumeChart({ data }: { data: DailyVolumePoint[] }) {
               <Line
                 type="monotone"
                 dataKey="agendado_plus"
-                name={GRUPO_LABEL["Agendado+"]}
+                name={rotuloGrupo("Agendado+")}
                 stroke={CHART_COLORS.secondary}
                 strokeWidth={2}
                 dot={{ r: 2.5, fill: CHART_COLORS.secondary }}

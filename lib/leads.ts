@@ -167,6 +167,9 @@ export type DashboardData = {
    *  tabela de anúncios usa: o investimento pagou os leads diretos também, e
    *  o CPL só da Flávia sairia inflado. Igual a `kpis` quando não separa. */
   kpisTodos: Kpis;
+  /** Funil até a venda sem o rótulo "Convertido" (Launch e Portovelas):
+   *  Agendamentos, Reunião acontecida e Venda no strip, no funil e na tabela. */
+  funilReuniao: boolean;
 };
 
 // Cache em memória do FETCH BASE (leads do período, sem filtros). Filters
@@ -477,7 +480,9 @@ export async function getDashboardData(
     kpisPrevious,
     deltas,
     temPosAtendimento,
-    funnel: computeFunnel(currentFiltered, temPosAtendimento),
+    funnel: recursos.funilReuniao
+      ? computeFunnelReuniao(currentFiltered)
+      : computeFunnel(currentFiltered, temPosAtendimento),
     adsPerformance,
     charts: {
       ...buildAllCharts(currentFiltered),
@@ -491,6 +496,7 @@ export async function getDashboardData(
     totalNoPeriodo: currentLeadsAll.length,
     separarAtendimentoModo: separarModo,
     kpisTodos: separarModo ? computeKpis(currentFiltered) : kpis,
+    funilReuniao: recursos.funilReuniao,
   };
 }
 
@@ -586,6 +592,16 @@ export function computeFunnel(leads: LeadRow[], comPosAtendimento = false): Funn
         ]
       : []),
   ];
+}
+
+/** Mesmo funil com pós-atendimento, nos nomes do funil até a venda (Launch e
+ *  Portovelas, 11/11/2026): o Convertido vira Agendamentos, a visita ou
+ *  videochamada vira Reunião acontecida. Sem Proposta, por decisão do Murillo.
+ *  Cumulativo pela etapa atual: o lead que fez a reunião e depois foi para
+ *  "Não se interessou" sai da reunião, porque etapa_funil é sobrescrita. */
+export function computeFunnelReuniao(leads: LeadRow[]): FunnelStep[] {
+  const rotulos = ["Leads", "Interação", "MQL", "Agendamentos", "Reunião acontecida", "Venda"];
+  return computeFunnel(leads, true).map((s, i) => ({ ...s, label: rotulos[i] ?? s.label }));
 }
 
 /** Origem de um lead que não veio de anúncio rastreado. Medido em 07/10/2026,

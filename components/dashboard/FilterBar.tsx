@@ -2,10 +2,10 @@
 
 import { useMemo, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRotuloGrupo } from "@/lib/nomenclatura";
 import {
   ATENDIMENTO_LABEL,
   type AtendimentoModo,
-  ETAPA_LABEL,
   MQL_LABEL,
   SENTINEL,
   hasAnyFilter,
@@ -36,6 +36,7 @@ const ETAPA_KEYS: EtapaKey[] = ["novo", "em_conversa", "agendado_mais", "descart
 const MQL_KEYS: MqlValue[] = ["sim", "nao", "vazio"];
 
 export function FilterBar({ dimensions, totalNoPeriodo }: Props) {
+  const rotuloGrupo = useRotuloGrupo();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -199,7 +200,7 @@ export function FilterBar({ dimensions, totalNoPeriodo }: Props) {
               const grupo = ETAPA_TO_GRUPO[k];
               return {
                 value: k,
-                label: ETAPA_LABEL[k],
+                label: rotuloGrupo(grupo),
                 color: GRUPO_CHIP[grupo],
               };
             }),

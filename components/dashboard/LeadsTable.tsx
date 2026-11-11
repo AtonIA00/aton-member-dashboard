@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { classify, GRUPO_CHIP, GRUPO_LABEL, STATUS_OPTIONS, type Grupo } from "@/lib/classify";
+import { classify, GRUPO_CHIP, STATUS_OPTIONS, type Grupo } from "@/lib/classify";
+import { rotuloGrupo, useAgendamentos } from "@/lib/nomenclatura";
 import type { LeadRow } from "@/lib/leads";
 import {
   exportLeadsToCsv,
@@ -88,12 +89,12 @@ function fmtMql(mql: string | null): { label: string; cls: string } {
 
 // Filtro local da tabela (drill-down). Etapa usa o label de exibição
 // ("Convertido" etc.); MQL normaliza Sim/Não/Sem MQL; campanha auto-derivada.
-const LEADS_TABLE_FIELDS: DrilldownField<LeadRow>[] = [
+const leadsTableFields = (agendamentos: boolean): DrilldownField<LeadRow>[] => [
   {
     key: "etapa",
     label: "Etapa",
     allLabel: "Todas",
-    get: (l) => GRUPO_LABEL[classify(l.etapa_funil)],
+    get: (l) => rotuloGrupo(classify(l.etapa_funil), agendamentos),
   },
   {
     key: "mql",
@@ -126,7 +127,9 @@ export function LeadsTable({
   // Filtro local (drill-down) da lista — dataset inteiro, antes da paginação.
   // Padrão do repo pra tabelas de detalhe; complementar ao FilterBar global
   // (que filtra o dashboard todo server-side). Este só afeta a lista.
-  const { filtered, bar } = useTableDrilldown(leads, LEADS_TABLE_FIELDS);
+  const agendamentos = useAgendamentos();
+  const fields = useMemo(() => leadsTableFields(agendamentos), [agendamentos]);
+  const { filtered, bar } = useTableDrilldown(leads, fields);
 
   const [page, setPage] = useState(0);
 
@@ -507,7 +510,7 @@ export function LeadsTable({
                         }}
                         title={l.etapa_funil ?? ""}
                       >
-                        {GRUPO_LABEL[g]}
+                        {rotuloGrupo(g, agendamentos)}
                       </span>
                     )}
                   </td>
@@ -902,6 +905,7 @@ function EditableStatusCell({
   hmac: HmacParams;
   onSaved: () => void;
 }) {
+  const agendamentos = useAgendamentos();
   const [val, setVal] = useState(current ?? "");
   const [busy, setBusy] = useState(false);
   useEffect(() => setVal(current ?? ""), [current]);
@@ -938,10 +942,10 @@ function EditableStatusCell({
       {/* valor atual fora da lista canônica (casing/legado) — mantém visível */}
       {!known && val && <option value={val}>{val} (atual)</option>}
       {grupos.map((gr) => (
-        <optgroup key={gr} label={GRUPO_LABEL[gr]}>
+        <optgroup key={gr} label={rotuloGrupo(gr, agendamentos)}>
           {STATUS_OPTIONS.filter((o) => o.grupo === gr).map((o) => (
             <option key={o.value} value={o.value}>
-              {o.label}
+              {agendamentos && o.value === "Agendado" ? "Agendado" : o.label}
             </option>
           ))}
         </optgroup>

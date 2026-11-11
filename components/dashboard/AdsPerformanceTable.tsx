@@ -20,6 +20,9 @@ type Props = {
   metaAds: MetaAdsForTable | null;
   /** KPIs do recorte — base do resumo custo × desfecho. */
   kpis: Kpis;
+  /** Funil até a venda (Launch e Portovelas): "Agendamentos" no lugar de
+   *  "Convertidos" nas colunas, no resumo e no export. */
+  agendamentos?: boolean;
   /** Filtros ativos → resumo de custo é ocultado (spend é da conta inteira;
    *  comparar com KPIs filtrados distorceria os R$/lead). */
   filtersActive: boolean;
@@ -97,6 +100,7 @@ export function AdsPerformanceTable({
   rows,
   metaAds,
   kpis,
+  agendamentos = false,
   filtersActive,
   workspaceName,
   periodLabel,
@@ -181,6 +185,7 @@ export function AdsPerformanceTable({
           rows={rows}
           metaAds={metaAds}
           kpis={kpis}
+          agendamentos={agendamentos}
           workspaceName={workspaceName}
           periodLabel={periodLabel}
           filtersActive={filtersActive}
@@ -191,7 +196,7 @@ export function AdsPerformanceTable({
           Oculto com filtros ativos: o spend é da conta INTEIRA no período —
           dividir por KPIs filtrados inflaria os custos artificialmente. */}
       {metaAds && !filtersActive && (
-        <CostSummaryStrip metaAds={metaAds} kpis={kpis} />
+        <CostSummaryStrip metaAds={metaAds} kpis={kpis} agendamentos={agendamentos} />
       )}
 
       <div className="max-h-[460px] overflow-auto">
@@ -205,10 +210,10 @@ export function AdsPerformanceTable({
                 {metaAds ? "Anúncio" : "ID Anúncio"}
               </Th>
               <Th col="agendados" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
-                Convertidos
+                {agendamentos ? "Agendamentos" : "Convertidos"}
               </Th>
               <Th col="pctAgend" sortCol={sortCol} sortDir={sortDir} onClick={toggle} align="right">
-                % Conversão
+                {agendamentos ? "% Agendamento" : "% Conversão"}
               </Th>
               <Th
                 col="pctMql"
@@ -240,8 +245,11 @@ export function AdsPerformanceTable({
                   <ThPlain align="right" title="Investimento ÷ MQLs">
                     R$/MQL
                   </ThPlain>
-                  <ThPlain align="right" title="Investimento ÷ convertidos">
-                    R$/Conv.
+                  <ThPlain
+                    align="right"
+                    title={agendamentos ? "Investimento ÷ agendamentos" : "Investimento ÷ convertidos"}
+                  >
+                    {agendamentos ? "R$/Agend." : "R$/Conv."}
                   </ThPlain>
                 </>
               )}
@@ -324,6 +332,7 @@ function AdsExportButton({
   rows,
   metaAds,
   kpis,
+  agendamentos,
   workspaceName,
   periodLabel,
   filtersActive,
@@ -331,6 +340,7 @@ function AdsExportButton({
   rows: AdsPerfRow[];
   metaAds: MetaAdsForTable | null;
   kpis: Kpis;
+  agendamentos: boolean;
   workspaceName: string;
   periodLabel: string;
   filtersActive: boolean;
@@ -363,7 +373,7 @@ function AdsExportButton({
         rows,
         metaAds,
         kpis,
-        meta: { workspaceName, periodLabel, filtersActive, exportedAt: new Date() },
+        meta: { workspaceName, periodLabel, filtersActive, agendamentos, exportedAt: new Date() },
       };
       if (kind === "xlsx") await mod.exportAdsToXlsx(input);
       else if (kind === "csv") mod.exportAdsToCsv(input);
@@ -492,7 +502,15 @@ function AdsExportItem({
 }
 
 // ── Resumo custo × desfecho (topo da seção) ─────────────────────────────────
-function CostSummaryStrip({ metaAds, kpis }: { metaAds: MetaAdsForTable; kpis: Kpis }) {
+function CostSummaryStrip({
+  metaAds,
+  kpis,
+  agendamentos,
+}: {
+  metaAds: MetaAdsForTable;
+  kpis: Kpis;
+  agendamentos: boolean;
+}) {
   const c = metaAds.currency;
   const items: { label: string; value: string; sub?: string; accent?: boolean }[] = [
     {
@@ -514,9 +532,9 @@ function CostSummaryStrip({ metaAds, kpis }: { metaAds: MetaAdsForTable; kpis: K
       sub: `${kpis.mqlSim.toLocaleString("pt-BR")} qualificados`,
     },
     {
-      label: "Custo por convertido",
+      label: agendamentos ? "Custo por agendamento" : "Custo por convertido",
       value: fmtCostPer(metaAds.totalSpend, kpis.agendadoPlus, c),
-      sub: `${kpis.agendadoPlus.toLocaleString("pt-BR")} convertidos`,
+      sub: `${kpis.agendadoPlus.toLocaleString("pt-BR")} ${agendamentos ? "agendamentos" : "convertidos"}`,
     },
     {
       label: "CTR médio (link)",

@@ -24,6 +24,8 @@ export type AdsExportMeta = {
   /** Filtros ativos → nota no arquivo (e resumo de custo omitido no PDF, pelo
    *  mesmo motivo da tela: spend é da conta inteira). */
   filtersActive: boolean;
+  /** Funil até a venda: "Agendamentos" no lugar de "Convertidos". */
+  agendamentos?: boolean;
   exportedAt: Date;
 };
 
@@ -302,23 +304,32 @@ const COLUMNS: AdsColumn[] = [
   },
 ];
 
-function activeColumns(hasMeta: boolean, forPdf: boolean): AdsColumn[] {
+// Funil até a venda (Launch e Portovelas): mesmas colunas, sem "Convertido".
+const ROTULO_AGENDAMENTO: Record<string, { header: string; pdfHeader: string }> = {
+  Convertidos: { header: "Agendamentos", pdfHeader: "Agend." },
+  "% Conversão": { header: "% Agendamento", pdfHeader: "% Agend." },
+  "R$/Convertido": { header: "R$/Agendamento", pdfHeader: "R$/Agend." },
+};
+
+function activeColumns(hasMeta: boolean, forPdf: boolean, agendamentos = false): AdsColumn[] {
   return COLUMNS.filter(
     (c) => (hasMeta || !c.metaOnly) && (!forPdf || c.pdfWidth > 0),
-  );
+  ).map((c) => (agendamentos && ROTULO_AGENDAMENTO[c.header] ? { ...c, ...ROTULO_AGENDAMENTO[c.header] } : c));
 }
 
 /** Resumo custo × desfecho — mesmos números do strip da tela. */
 function summaryPairs(
   meta: MetaAdsForTable,
   kpis: Kpis,
+  agendamentos = false,
 ): Array<{ label: string; value: string; sub: string }> {
   const c = meta.currency;
+  const conv = agendamentos ? "agendamento" : "convertido";
   return [
     { label: "Investimento", value: money(meta.totalSpend, c), sub: meta.googleSpend ? `Meta ${money(meta.totalSpend - meta.googleSpend, c)} + Google ${money(meta.googleSpend, c)}` : "Meta Ads no período" },
     { label: "CPL real", value: costPer(meta.totalSpend, kpis.total, c), sub: `${int(kpis.total)} leads na base` },
     { label: "Custo por MQL", value: costPer(meta.totalSpend, kpis.mqlSim, c), sub: `${int(kpis.mqlSim)} qualificados` },
-    { label: "Custo por convertido", value: costPer(meta.totalSpend, kpis.agendadoPlus, c), sub: `${int(kpis.agendadoPlus)} convertidos` },
+    { label: `Custo por ${conv}`, value: costPer(meta.totalSpend, kpis.agendadoPlus, c), sub: `${int(kpis.agendadoPlus)} ${conv}s` },
     {
       label: "CTR médio (link)",
       value: meta.avgCtr.toFixed(2).replace(".", ",") + "%",
@@ -384,7 +395,7 @@ function argb(hex: string): string {
 
 export async function exportAdsToXlsx({ rows, metaAds, kpis, meta }: AdsExportInput): Promise<void> {
   const ExcelJS = (await import("exceljs")).default;
-  const cols = activeColumns(!!metaAds, false);
+  const cols = activeColumns(!!metaAds, false, meta.agendamentos);
   const ctx: Ctx = { meta: metaAds, currency: metaAds?.currency ?? "BRL" };
 
   const wb = new ExcelJS.Workbook();
@@ -480,7 +491,7 @@ export async function exportAdsToXlsx({ rows, metaAds, kpis, meta }: AdsExportIn
     rs.getCell("A2").value = subtitleLine(rows, meta);
     rs.getCell("A2").font = { name: "Calibri", size: 10, color: { argb: argb(BRAND.muted) } };
     rs.mergeCells("A2:C2");
-    summaryPairs(metaAds, kpis).forEach((p, i) => {
+    summaryPairs(metaAds, kpis, meta.agendamentos).forEach((p, i) => {
       const row = rs.getRow(4 + i);
       row.getCell(1).value = p.label;
       row.getCell(1).font = { name: "Calibri", bold: true, size: 10, color: { argb: argb(BRAND.ink) } };
@@ -524,7 +535,7 @@ function csvField(raw: string, guard: boolean, sep: string): string {
 
 export function exportAdsToCsv({ rows, metaAds, meta }: AdsExportInput): void {
   const sep = ";"; // Excel pt-BR
-  const cols = activeColumns(!!metaAds, false);
+  const cols = activeColumns(!!metaAds, false, meta.agendamentos);
   const ctx: Ctx = { meta: metaAds, currency: metaAds?.currency ?? "BRL" };
   const lines: string[] = [cols.map((c) => csvField(c.header, false, sep)).join(sep)];
   for (const r of rows) {
@@ -722,7 +733,7 @@ export async function exportAdsToPdf({ rows, metaAds, kpis, meta }: AdsExportInp
   // Omitido com filtros ativos, pelo mesmo motivo da tela: o investimento é
   // da conta INTEIRA no período, dividir por KPIs filtrados infla os custos.
   if (metaAds && !meta.filtersActive) {
-    const pairs = summaryPairs(metaAds, kpis);
+    const pairs = summaryPairs(metaAds, kpis, meta.agendamentos);
     const gap = 2.5;
     const cardW = (pageW - M * 2 - gap * (pairs.length - 1)) / pairs.length;
     const cardH = 17;
@@ -765,7 +776,7 @@ export async function exportAdsToPdf({ rows, metaAds, kpis, meta }: AdsExportInp
   }
 
   // ── Tabela ───────────────────────────────────────────────────────────────
-  const cols = activeColumns(!!metaAds, true);
+  const cols = activeColumns(!!metaAds, true, meta.agendamentos);
   const ctx: Ctx = { meta: metaAds, currency: metaAds?.currency ?? "BRL" };
   const totalW = cols.reduce((s, c) => s + c.pdfWidth, 0);
   const avail = pageW - M * 2;

@@ -147,9 +147,16 @@ export type RecursosAssinante = {
   separarAtendimentoModo: boolean;
   /** Telefones (só dígitos) cujos leads somem do dash como se excluídos. */
   telefonesTeste: string[];
+  /** KPIs e funil até a venda, sem o rótulo "Convertido": Agendamentos,
+   *  Reunião acontecida e Venda (Launch e Portovelas, 11/11/2026). */
+  funilReuniao: boolean;
 };
 
-const RECURSOS_VAZIO: RecursosAssinante = { separarAtendimentoModo: false, telefonesTeste: [] };
+const RECURSOS_VAZIO: RecursosAssinante = {
+  separarAtendimentoModo: false,
+  telefonesTeste: [],
+  funilReuniao: false,
+};
 const recursosCache = new Map<string, { ts: number; data: RecursosAssinante }>();
 const RECURSOS_TTL_MS = 60_000;
 
@@ -158,9 +165,13 @@ export async function getRecursosAssinante(workspaceId: string): Promise<Recurso
   if (hit && Date.now() - hit.ts < RECURSOS_TTL_MS) return hit.data;
   const { data, error } = await getSupabaseAdmin()
     .from("wa_member_dashboard_access")
-    .select("separar_atendimento_modo, telefones_teste")
+    .select("separar_atendimento_modo, telefones_teste, funil_reuniao")
     .eq("uchat_workspace_id", workspaceId)
-    .maybeSingle<{ separar_atendimento_modo: boolean | null; telefones_teste: string[] | null }>();
+    .maybeSingle<{
+      separar_atendimento_modo: boolean | null;
+      telefones_teste: string[] | null;
+      funil_reuniao: boolean | null;
+    }>();
   if (error) {
     console.error("[access] recursos falhou", { workspaceId, message: error.message });
     return RECURSOS_VAZIO;
@@ -170,6 +181,7 @@ export async function getRecursosAssinante(workspaceId: string): Promise<Recurso
     telefonesTeste: (data?.telefones_teste ?? [])
       .map((t) => String(t).replace(/\D/g, ""))
       .filter(Boolean),
+    funilReuniao: data?.funil_reuniao === true,
   };
   recursosCache.set(workspaceId, { ts: Date.now(), data: recursos });
   return recursos;

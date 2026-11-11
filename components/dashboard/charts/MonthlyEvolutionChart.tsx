@@ -15,7 +15,7 @@ import { ChartCard } from "./ChartCard";
 import { EmptyChart } from "./EmptyChart";
 import { AtonTooltip } from "./tooltip";
 import { CHART_AXIS, CHART_COLORS } from "@/lib/chart-palette";
-import { GRUPO_LABEL } from "@/lib/classify";
+import { useRotuloGrupo } from "@/lib/nomenclatura";
 
 const HEIGHT = 320;
 
@@ -26,6 +26,7 @@ const AXIS_STYLE = {
 };
 
 export function MonthlyEvolutionChart({ data }: { data: MonthlyEvolutionPoint[] }) {
+  const rotuloGrupo = useRotuloGrupo();
   if (data.length === 0) {
     return (
       <ChartCard
@@ -120,7 +121,7 @@ export function MonthlyEvolutionChart({ data }: { data: MonthlyEvolutionPoint[] 
               yAxisId="left"
               type="monotone"
               dataKey="agendado"
-              name={GRUPO_LABEL["Agendado+"]}
+              name={rotuloGrupo("Agendado+")}
               stroke={CHART_COLORS.secondary}
               strokeWidth={2}
               dot={{ r: 3, fill: CHART_COLORS.secondary }}

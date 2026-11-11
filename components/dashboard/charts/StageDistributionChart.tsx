@@ -16,7 +16,7 @@ import { ChartCard } from "./ChartCard";
 import { EmptyChart } from "./EmptyChart";
 import { AtonTooltip } from "./tooltip";
 import { CHART_AXIS } from "@/lib/chart-palette";
-import { GRUPO_LABEL } from "@/lib/classify";
+import { useRotuloGrupo } from "@/lib/nomenclatura";
 import { useTheme } from "@/lib/use-theme";
 
 const HEIGHT = 250;
@@ -28,6 +28,7 @@ const AXIS_STYLE = {
 };
 
 export function StageDistributionChart({ data }: { data: StageDistributionPoint[] }) {
+  const rotuloGrupo = useRotuloGrupo();
   const theme = useTheme();
   const labelFill = theme === "dark" ? "#f4f6fb" : "#0b1220";
   const total = data.reduce((s, d) => s + d.value, 0);
@@ -35,7 +36,7 @@ export function StageDistributionChart({ data }: { data: StageDistributionPoint[
   // e o tooltip leem `name` direto do dado, então mapeamos aqui — cor e ordem
   // canônica (GRUPO_ORDER em lib/charts.ts) preservadas.
   const display = data.map((d) => ({
-    name: GRUPO_LABEL[d.name],
+    name: rotuloGrupo(d.name),
     value: d.value,
     color: d.color,
   }));

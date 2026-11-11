@@ -47,6 +47,10 @@ export const STATUS_OPTIONS: { grupo: Grupo; label: string; value: string }[] = 
   // pode SAIR do Convertido ao avançar.
   { grupo: "Agendado+", label: "Visita feita", value: "Visita Feita" },
   { grupo: "Agendado+", label: "Vendido", value: "Vendido" },
+  // SDR do Core (Launch, Portovelas, 11/11/2026): a reunião pode ser por
+  // vídeo, e a venda chega como "Venda Concluída" pelo quadro da UChat.
+  { grupo: "Agendado+", label: "Videochamada feita", value: "Videochamada Feita" },
+  { grupo: "Agendado+", label: "Venda concluída", value: "Venda Concluída" },
   { grupo: "Descartado", label: "Não se interessou", value: "Não se interessou" },
   { grupo: "Descartado", label: "Lead desqualificado", value: "Lead desqualificado" },
   { grupo: "Descartado", label: "Corretor de imóveis", value: "Corretor de imóveis" },
@@ -63,7 +67,10 @@ const SET_AGENDADO_PLUS = new Set([
   "negociacao",
   "financeiro",
   "visita feita",
+  "videochamada feita",
   "vendido",
+  "venda concluída",
+  "venda concluida",
 ]);
 
 export type PosAtendimento = "visita" | "venda";
@@ -76,8 +83,9 @@ export type PosAtendimento = "visita" | "venda";
  */
 export function posAtendimento(etapaFunil: string | null | undefined): PosAtendimento | null {
   const e = (etapaFunil ?? "").toLowerCase().trim();
-  if (e === "vendido") return "venda";
-  if (e === "visita feita") return "visita";
+  if (e === "vendido" || e === "venda concluída" || e === "venda concluida") return "venda";
+  // Videochamada conta como visita: as duas são a reunião que aconteceu.
+  if (e === "visita feita" || e === "videochamada feita") return "visita";
   return null;
 }
 

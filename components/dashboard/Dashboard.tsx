@@ -10,6 +10,7 @@ import { VideoRetentionTable } from "./VideoRetentionTable";
 import { OutboundSection } from "./OutboundSection";
 import { getOutboundData, type OutboundData } from "@/lib/outbound";
 import { LeadsTable } from "./LeadsTable";
+import { NomenclaturaProvider } from "@/lib/nomenclatura";
 import { PeriodPicker } from "./PeriodPicker";
 import { TierBadge } from "./TierBadge";
 import { FilterBar } from "./FilterBar";
@@ -323,7 +324,7 @@ function DashboardContent({
       : PERIOD_LABEL[periodKey];
 
   return (
-    <>
+    <NomenclaturaProvider agendamentos={data.funilReuniao}>
       <p className="mt-4 text-sm text-[color:var(--muted-foreground)]">{periodSummary}</p>
 
       {/* FilterBar — só aparece se tem leads no período */}
@@ -347,6 +348,7 @@ function DashboardContent({
             kpisPrevious={data.kpisPrevious}
             deltas={data.deltas}
             temPosAtendimento={data.temPosAtendimento}
+            funilReuniao={data.funilReuniao}
           />
         </div>
       )}
@@ -386,6 +388,8 @@ function DashboardContent({
           <div className="mt-8">
             {atendimento ? (
               <Funnel steps={atendimento.funil} titulo="Funil até a venda" cores={coresFunilCv(atendimento.funil)} />
+            ) : data.funilReuniao ? (
+              <Funnel steps={data.funnel} titulo="Funil até a venda" perdas />
             ) : (
               <Funnel steps={data.funnel} />
             )}
@@ -400,6 +404,7 @@ function DashboardContent({
               rows={data.adsPerformance}
               metaAds={metaAds}
               kpis={data.kpisTodos}
+              agendamentos={data.funilReuniao}
               filtersActive={filtersActive}
               workspaceName={workspaceName}
               periodLabel={periodLabel}
@@ -460,7 +465,7 @@ function DashboardContent({
           </div>
         </>
       )}
-    </>
+    </NomenclaturaProvider>
   );
 }
 

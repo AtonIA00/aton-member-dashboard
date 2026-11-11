@@ -5,6 +5,8 @@ type Props = {
   titulo?: string;
   /** Cores por etapa; sem isto, a paleta do funil de qualificação. */
   cores?: string[];
+  /** Coluna com quantos ficaram na etapa anterior e não chegaram a esta. */
+  perdas?: boolean;
 };
 
 /** Funil até a venda (WDS), cor por rótulo: sem o CV o funil para em
@@ -42,7 +44,7 @@ function int(n: number): string {
   return n.toLocaleString("pt-BR");
 }
 
-export function Funnel({ steps, titulo = "Funil de Qualificação", cores = STEP_COLORS }: Props) {
+export function Funnel({ steps, titulo = "Funil de Qualificação", cores = STEP_COLORS, perdas = false }: Props) {
   const max = Math.max(1, ...steps.map((s) => s.count));
 
   return (
@@ -55,6 +57,11 @@ export function Funnel({ steps, titulo = "Funil de Qualificação", cores = STEP
         <h2 className="font-[family-name:var(--font-montserrat)] text-xs font-bold uppercase tracking-[0.15em] text-[color:var(--muted-foreground)]">
           {titulo}
         </h2>
+        {perdas && (
+          <span className="ml-auto text-[11px] text-[color:var(--muted-foreground)]/80">
+            Perda: quem estava na etapa anterior e não chegou a esta
+          </span>
+        )}
       </div>
 
       <div className="flex flex-col gap-3">
@@ -68,7 +75,7 @@ export function Funnel({ steps, titulo = "Funil de Qualificação", cores = STEP
               </div>
               <div className="relative h-8 flex-1 overflow-hidden rounded-md bg-[color:var(--surface-2)]/60">
                 <div
-                  className="absolute inset-y-0 left-0 flex items-center rounded-md px-2.5 text-[11px] font-bold text-white transition-[width] duration-500"
+                  className={`absolute inset-y-0 left-0 flex items-center rounded-md text-[11px] font-bold text-white transition-[width] duration-500 ${s.count > 0 ? "px-2.5" : ""}`}
                   style={{
                     width: `${widthPct}%`,
                     background: color,
@@ -81,10 +88,25 @@ export function Funnel({ steps, titulo = "Funil de Qualificação", cores = STEP
               <div className="w-14 flex-shrink-0 text-right text-xs text-[color:var(--muted-foreground)]/80">
                 {pct(s.pctOfTotal)}
               </div>
+              {perdas && <Perda anterior={i > 0 ? steps[i - 1].count : null} atual={s.count} />}
             </div>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function Perda({ anterior, atual }: { anterior: number | null; atual: number }) {
+  // A primeira etapa não tem de onde perder. Etapa maior que a anterior
+  // acontece (o MQL é travado em Interação, o agendamento não): sem perda.
+  const perdeu = anterior !== null && anterior > atual ? anterior - atual : null;
+  return (
+    <div
+      className="w-28 flex-shrink-0 text-right text-xs tabular-nums text-[color:var(--muted-foreground)]/80"
+      title={perdeu !== null ? `${int(perdeu)} de ${int(anterior!)} não chegaram a esta etapa` : undefined}
+    >
+      {perdeu !== null ? `−${int(perdeu)} (${pct(perdeu / anterior!)})` : ""}
     </div>
   );
 }
