@@ -24,6 +24,7 @@ import { computeDelta, type Delta } from "./deltas";
 import { getExcludedLeadIds } from "./lead-exclusions";
 import { getRecursosAssinante } from "./access";
 import { atendimentoDoLead } from "./filters";
+import { chegouAo, resumirPerdas, type PerdaEtapa } from "./marcos";
 
 /** Telefone comparável: DDD + 8 últimos dígitos. Ignora o 55 e o nono
  *  dígito, que o CRM grava às vezes sim, às vezes não, para o mesmo número. */
@@ -54,6 +55,14 @@ export type LeadRow = {
   /** 'flavia' | 'direto' | null — só a WDS grava (28/10/2026). Opcional
    *  porque outras leituras de LeadRow não selecionam a coluna. */
   atendimento_modo?: string | null;
+  /** Marcos do funil gravados pelo gatilho do CRM (11/11/2026), nunca
+   *  apagados. Ver lib/marcos.ts. Opcionais pelo mesmo motivo do acima. */
+  agendado_em?: string | null;
+  reuniao_em?: string | null;
+  venda_em?: string | null;
+  perdido_em?: string | null;
+  perda_etapa?: string | null;
+  perda_motivo?: string | null;
 };
 
 export type Kpis = {
@@ -170,6 +179,9 @@ export type DashboardData = {
   /** Funil até a venda sem o rótulo "Convertido" (Launch e Portovelas):
    *  Agendamentos, Reunião acontecida e Venda no strip, no funil e na tabela. */
   funilReuniao: boolean;
+  /** Perdas do recorte por etapa e motivo (marcos do CRM). null fora do
+   *  funil até a venda. */
+  perdas: PerdaEtapa[] | null;
 };
 
 // Cache em memória do FETCH BASE (leads do período, sem filtros). Filters
@@ -217,7 +229,7 @@ async function fetchBaseLeads(
     let q = supabase
       .from("terrace360_leads_atonhub")
       .select(
-        "id, data, nome_lead, etapa_funil, resumo_conversa, telefone, ddd_lead, nome_campanha, id_anuncio, mql, canal_campanha, cidade_campanha, estado_campanha, atendimento_modo",
+        "id, data, nome_lead, etapa_funil, resumo_conversa, telefone, ddd_lead, nome_campanha, id_anuncio, mql, canal_campanha, cidade_campanha, estado_campanha, atendimento_modo, agendado_em, reuniao_em, venda_em, perdido_em, perda_etapa, perda_motivo",
       )
       .eq("id_workspace_responsavel", workspaceId)
       .order("data", { ascending: false })
@@ -421,9 +433,10 @@ export async function getDashboardData(
   // leads da Flávia entram; os diretos ganham bloco próprio na tela.
   const soFlavia = (ls: LeadRow[]) =>
     separarModo ? ls.filter((l) => atendimentoDoLead(l) === "flavia") : ls;
-  const kpis = computeKpis(soFlavia(currentFiltered));
+  const comDatas = recursos.funilReuniao;
+  const kpis = computeKpis(soFlavia(currentFiltered), comDatas);
   const temPosAtendimento = twelveMoLeads.some((l) => posAtendimento(l.etapa_funil) !== null);
-  const kpisPrevious = prev ? computeKpis(soFlavia(previousFiltered)) : null;
+  const kpisPrevious = prev ? computeKpis(soFlavia(previousFiltered), comDatas) : null;
   const deltas: Deltas | null = kpisPrevious
     ? {
         total: computeDelta(kpis.total, kpisPrevious.total, {
@@ -465,9 +478,9 @@ export async function getDashboardData(
     : null;
 
   // Performance por anúncio + comparativo por anúncio (Total vs período anterior).
-  const adsCurrent = computeAdsPerformance(currentFiltered);
+  const adsCurrent = computeAdsPerformance(currentFiltered, comDatas);
   const adsPerformance = prev
-    ? attachAdsPerfDeltas(adsCurrent, computeAdsPerformance(previousFiltered))
+    ? attachAdsPerfDeltas(adsCurrent, computeAdsPerformance(previousFiltered, comDatas))
     : adsCurrent;
 
   return {
@@ -495,12 +508,15 @@ export async function getDashboardData(
     fetchMs: baseExpanded.fetchMs + twelveMo.fetchMs,
     totalNoPeriodo: currentLeadsAll.length,
     separarAtendimentoModo: separarModo,
-    kpisTodos: separarModo ? computeKpis(currentFiltered) : kpis,
+    kpisTodos: separarModo ? computeKpis(currentFiltered, comDatas) : kpis,
     funilReuniao: recursos.funilReuniao,
+    perdas: recursos.funilReuniao ? resumirPerdas(currentFiltered) : null,
   };
 }
 
-export function computeKpis(leads: LeadRow[]): Kpis {
+/** comDatas: agendamento, reunião e venda pelos marcos gravados (funil até a
+ *  venda). Sem isso, pela etapa atual, como sempre foi. */
+export function computeKpis(leads: LeadRow[], comDatas = false): Kpis {
   const total = leads.length;
   let novos = 0;
   let mqlSim = 0;
@@ -515,10 +531,9 @@ export function computeKpis(leads: LeadRow[]): Kpis {
   for (const l of leads) {
     const g = classify(l.etapa_funil);
     if (g === "Novo") novos++;
-    if (g === "Agendado+") agendadoPlus++;
-    const pos = posAtendimento(l.etapa_funil);
-    if (pos) visitas++;
-    if (pos === "venda") vendas++;
+    if (chegouAo(l, "agendado", comDatas)) agendadoPlus++;
+    if (chegouAo(l, "reuniao", comDatas)) visitas++;
+    if (chegouAo(l, "venda", comDatas)) vendas++;
     const mqlRaw = (l.mql ?? "").trim();
     if (mqlRaw === "") mqlSemClassificacao++;
     if (mqlRaw.toLowerCase() === "sim") {
@@ -553,7 +568,7 @@ export function computeKpis(leads: LeadRow[]): Kpis {
   };
 }
 
-export function computeFunnel(leads: LeadRow[], comPosAtendimento = false): FunnelStep[] {
+export function computeFunnel(leads: LeadRow[], comPosAtendimento = false, comDatas = false): FunnelStep[] {
   const total = leads.length;
   let novos = 0;
   let mqlSim = 0;
@@ -563,10 +578,9 @@ export function computeFunnel(leads: LeadRow[], comPosAtendimento = false): Funn
   for (const l of leads) {
     const g = classify(l.etapa_funil);
     if (g === "Novo") novos++;
-    if (g === "Agendado+") agendadoPlus++;
-    const pos = posAtendimento(l.etapa_funil);
-    if (pos) visitas++;
-    if (pos === "venda") vendas++;
+    if (chegouAo(l, "agendado", comDatas)) agendadoPlus++;
+    if (chegouAo(l, "reuniao", comDatas)) visitas++;
+    if (chegouAo(l, "venda", comDatas)) vendas++;
     if ((l.mql ?? "").toLowerCase().trim() === "sim") mqlSim++;
   }
   const interagiram = total - novos;
@@ -601,7 +615,7 @@ export function computeFunnel(leads: LeadRow[], comPosAtendimento = false): Funn
  *  "Não se interessou" sai da reunião, porque etapa_funil é sobrescrita. */
 export function computeFunnelReuniao(leads: LeadRow[]): FunnelStep[] {
   const rotulos = ["Leads", "Interação", "MQL", "Agendamentos", "Reunião acontecida", "Venda"];
-  return computeFunnel(leads, true).map((s, i) => ({ ...s, label: rotulos[i] ?? s.label }));
+  return computeFunnel(leads, true, true).map((s, i) => ({ ...s, label: rotulos[i] ?? s.label }));
 }
 
 /** Origem de um lead que não veio de anúncio rastreado. Medido em 07/10/2026,
@@ -614,7 +628,7 @@ function origemSemAnuncio(canal: string | null | undefined): { chave: string; ro
   return { chave: "origem_nao_identificada", rotulo: "Origem não identificada" };
 }
 
-export function computeAdsPerformance(leads: LeadRow[]): AdsPerfRow[] {
+export function computeAdsPerformance(leads: LeadRow[], comDatas = false): AdsPerfRow[] {
   type Bucket = {
     idAnuncio: string;
     isUnknownId: boolean;
@@ -654,7 +668,7 @@ export function computeAdsPerformance(leads: LeadRow[]): AdsPerfRow[] {
     b.total++;
     const g = classify(l.etapa_funil);
     if (g === "Novo") b.novos++;
-    if (g === "Agendado+") b.agendados++;
+    if (chegouAo(l, "agendado", comDatas)) b.agendados++;
     if ((l.mql ?? "").toLowerCase().trim() === "sim") b.mqlSim++;
   }
 

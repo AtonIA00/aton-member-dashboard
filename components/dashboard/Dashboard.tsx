@@ -10,6 +10,7 @@ import { VideoRetentionTable } from "./VideoRetentionTable";
 import { OutboundSection } from "./OutboundSection";
 import { getOutboundData, type OutboundData } from "@/lib/outbound";
 import { LeadsTable } from "./LeadsTable";
+import { PerdasFunil } from "./PerdasFunil";
 import { NomenclaturaProvider } from "@/lib/nomenclatura";
 import { PeriodPicker } from "./PeriodPicker";
 import { TierBadge } from "./TierBadge";
@@ -394,6 +395,11 @@ function DashboardContent({
               <Funnel steps={data.funnel} />
             )}
           </div>
+          {data.perdas && (
+            <div className="mt-8">
+              <PerdasFunil perdas={data.perdas} />
+            </div>
+          )}
           {atendimento && (
             <div className="mt-8">
               <CustoPorVisitaTable r={atendimento} />
