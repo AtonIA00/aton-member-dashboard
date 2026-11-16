@@ -121,6 +121,10 @@ export type TrisulKpis = TrisulCounts & {
   conversao: number; // ativos/disparos
   pctAtuam: number; // atuam_parcerias/respostas
   pctContatoCoord: number; // contato_coordenador/respostas
+  // Pedidos comerciais encaminhados ao administrativo (trisul_sinais_interesse),
+  // contados pelo DIA DO PEDIDO (BRT), não pelo dia do disparo.
+  pedidosComerciais: number;
+  parceirosComPedido: number;
 };
 
 export type TrisulDeltas = {
@@ -131,6 +135,7 @@ export type TrisulDeltas = {
   conversao: Delta;
   pctAtuam: Delta;
   pctContatoCoord: Delta;
+  pedidosComerciais: Delta;
 };
 
 export type TrisulDimensions = {
@@ -154,7 +159,16 @@ export type CoordRankRow = {
   taxaResposta: number;
   conversao: number;
 };
-export type DailyPoint = { dia: string; disparos: number; respostas: number };
+export type DailyPoint = { dia: string; disparos: number; respostas: number; pedidos: number };
+
+// Um pedido comercial (linha de trisul_sinais_interesse), com campanha e
+// coordenador do último atendimento do parceiro, pra respeitar os filtros.
+export type TrisulSinal = {
+  dia: string; // YYYY-MM-DD (BRT) do pedido
+  partner_id: number | null;
+  campanha: string | null;
+  coordenador_nome: string | null;
+};
 
 export type TrisulDashboardData = {
   range: DateRange;
@@ -280,6 +294,71 @@ async function fetchAtendimentos(
   return all;
 }
 
+// Dia BRT (UTC-3, sem horário de verão desde 2019) de um timestamptz.
+function brtDay(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return String(iso).slice(0, 10);
+  return new Date(t - 3 * 3_600_000).toISOString().slice(0, 10);
+}
+
+async function fetchSinais(): Promise<TrisulSinal[]> {
+  const supabase = getSupabaseAdmin();
+  let raw: { partner_id: number | null; criado_em: string }[] = [];
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from("trisul_sinais_interesse")
+      .select("partner_id, criado_em")
+      .order("criado_em", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      console.error("[trisul] fetchSinais", { message: error.message });
+      throw new Error("Falha ao buscar pedidos comerciais da Trisul");
+    }
+    const chunk = (data ?? []) as { partner_id: number | null; criado_em: string }[];
+    raw = raw.concat(chunk);
+    if (chunk.length < PAGE) break;
+    offset += PAGE;
+  }
+  if (raw.length === 0) return [];
+
+  // Campanha/coordenador do último atendimento de cada parceiro com pedido.
+  const ids = [...new Set(raw.map((r) => r.partner_id).filter((x): x is number => x != null))];
+  const info = new Map<number, { campanha: string | null; coordenador_nome: string | null; disparo_at: string }>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await supabase
+      .from("trisul_atendimentos")
+      .select("partner_id, campanha, coordenador_nome, disparo_at")
+      .in("partner_id", ids.slice(i, i + 200));
+    if (error) {
+      console.error("[trisul] fetchSinais/atendimentos", { message: error.message });
+      throw new Error("Falha ao buscar pedidos comerciais da Trisul");
+    }
+    for (const a of (data ?? []) as {
+      partner_id: number;
+      campanha: string | null;
+      coordenador_nome: string | null;
+      disparo_at: string | null;
+    }[]) {
+      const prev = info.get(a.partner_id);
+      const at = a.disparo_at ?? "";
+      if (!prev || at > prev.disparo_at) {
+        info.set(a.partner_id, { campanha: a.campanha, coordenador_nome: a.coordenador_nome, disparo_at: at });
+      }
+    }
+  }
+
+  return raw.map((r) => {
+    const i = r.partner_id != null ? info.get(r.partner_id) : undefined;
+    return {
+      dia: brtDay(r.criado_em),
+      partner_id: r.partner_id,
+      campanha: i?.campanha ?? null,
+      coordenador_nome: i?.coordenador_nome ?? null,
+    };
+  });
+}
+
 // ── Agregação ────────────────────────────────────────────────────────────────
 function inRange(dia: string, range: DateRange): boolean {
   if (range.from && dia < range.from) return false;
@@ -287,7 +366,10 @@ function inRange(dia: string, range: DateRange): boolean {
   return true;
 }
 
-function applyDiarioFilters(rows: TrisulDiarioRow[], f: TrisulFilters): TrisulDiarioRow[] {
+function applyDiarioFilters<T extends { campanha: string | null; coordenador_nome: string | null }>(
+  rows: T[],
+  f: TrisulFilters,
+): T[] {
   return rows.filter(
     (r) =>
       (!f.campanha || r.campanha === f.campanha) &&
@@ -327,10 +409,12 @@ function sumCounts(rows: TrisulDiarioRow[]): TrisulCounts {
   return acc;
 }
 
-function toKpis(c: TrisulCounts): TrisulKpis {
+function toKpis(c: TrisulCounts, sinais: TrisulSinal[]): TrisulKpis {
   const div = (a: number, b: number) => (b > 0 ? a / b : 0);
   return {
     ...c,
+    pedidosComerciais: sinais.length,
+    parceirosComPedido: new Set(sinais.map((s) => s.partner_id ?? `sem-id-${s.dia}`)).size,
     taxaResposta: div(c.respostas, c.disparos),
     taxaFalha: div(c.falhasEnvio, c.disparos),
     taxaAtivos: div(c.ativosConfirmados, c.respostas),
@@ -345,9 +429,10 @@ export async function getTrisulDashboardData(
   filtersIn: TrisulFilters = {},
   periodKey?: PeriodKey,
 ): Promise<TrisulDashboardData> {
-  const [diarioAll, atendimentos] = await Promise.all([
+  const [diarioAll, atendimentos, sinaisAll] = await Promise.all([
     fetchDiario(),
     fetchAtendimentos(range, filtersIn),
+    fetchSinais(),
   ]);
 
   // Dimensões vêm do universo inteiro (pra popular os selects mesmo fora do recorte).
@@ -367,8 +452,12 @@ export async function getTrisulDashboardData(
   const prev = previousRange(range, periodKey);
   const previous = prev ? filtered.filter((r) => inRange(r.dia, prev)) : [];
 
-  const kpis = toKpis(sumCounts(current));
-  const kpisPrevious = prev ? toKpis(sumCounts(previous)) : null;
+  const sinaisFiltered = applyDiarioFilters(sinaisAll, filters);
+  const sinaisCurrent = sinaisFiltered.filter((s) => inRange(s.dia, range));
+  const sinaisPrevious = prev ? sinaisFiltered.filter((s) => inRange(s.dia, prev)) : [];
+
+  const kpis = toKpis(sumCounts(current), sinaisCurrent);
+  const kpisPrevious = prev ? toKpis(sumCounts(previous), sinaisPrevious) : null;
 
   const deltas: TrisulDeltas | null = kpisPrevious
     ? {
@@ -379,11 +468,13 @@ export async function getTrisulDashboardData(
         conversao: computeDelta(kpis.conversao, kpisPrevious.conversao, { kind: "percent", orientation: "higher_is_better" }),
         pctAtuam: computeDelta(kpis.pctAtuam, kpisPrevious.pctAtuam, { kind: "percent", orientation: "higher_is_better" }),
         pctContatoCoord: computeDelta(kpis.pctContatoCoord, kpisPrevious.pctContatoCoord, { kind: "percent", orientation: "neutral" }),
+        pedidosComerciais: computeDelta(kpis.pedidosComerciais, kpisPrevious.pedidosComerciais, { kind: "count", orientation: "higher_is_better" }),
       }
     : null;
 
-  // Série diária (disparos x respostas), preenchendo lacunas entre min e max.
-  const daily = buildDaily(current);
+  // Série diária (disparos x respostas + pedidos comerciais), preenchendo
+  // lacunas entre min e max.
+  const daily = buildDaily(current, sinaisCurrent);
 
   // Consolidado por status — 6 categorias: os 5 resultados do enum + em_andamento.
   // "Negativa explícita" é a coluna `encerramentos` da view (count de
@@ -434,18 +525,25 @@ export async function getTrisulDashboardData(
   };
 }
 
-function buildDaily(rows: TrisulDiarioRow[]): DailyPoint[] {
-  if (rows.length === 0) return [];
-  const map = new Map<string, { disparos: number; respostas: number }>();
+function buildDaily(rows: TrisulDiarioRow[], sinais: TrisulSinal[]): DailyPoint[] {
+  if (rows.length === 0 && sinais.length === 0) return [];
+  const map = new Map<string, { disparos: number; respostas: number; pedidos: number }>();
   let min = "9999-99-99";
   let max = "0000-00-00";
   for (const r of rows) {
-    const b = map.get(r.dia) ?? { disparos: 0, respostas: 0 };
+    const b = map.get(r.dia) ?? { disparos: 0, respostas: 0, pedidos: 0 };
     b.disparos += r.disparos;
     b.respostas += r.respostas;
     map.set(r.dia, b);
     if (r.dia < min) min = r.dia;
     if (r.dia > max) max = r.dia;
+  }
+  for (const s of sinais) {
+    const b = map.get(s.dia) ?? { disparos: 0, respostas: 0, pedidos: 0 };
+    b.pedidos += 1;
+    map.set(s.dia, b);
+    if (s.dia < min) min = s.dia;
+    if (s.dia > max) max = s.dia;
   }
   // Preenche dias vazios entre min e max (continuidade visual).
   const points: DailyPoint[] = [];
@@ -455,7 +553,7 @@ function buildDaily(rows: TrisulDiarioRow[]): DailyPoint[] {
     const d = new Date(t);
     const dia = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
     const b = map.get(dia);
-    points.push({ dia, disparos: b?.disparos ?? 0, respostas: b?.respostas ?? 0 });
+    points.push({ dia, disparos: b?.disparos ?? 0, respostas: b?.respostas ?? 0, pedidos: b?.pedidos ?? 0 });
   }
   return points;
 }
