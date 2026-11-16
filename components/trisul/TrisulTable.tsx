@@ -7,8 +7,10 @@ import { exportTrisulCsv, exportTrisulXlsx, type TrisulExportMeta } from "@/lib/
 import { useTableDrilldown, type DrilldownField } from "@/lib/use-table-drilldown";
 import {
   aguardaCoordenador,
+  coordenadorNovoLabel,
   ehParceiro,
   pendenteDirecionamento,
+  regraLabel,
 } from "@/lib/trisul-direcionamento";
 import { TrisulDetailPanel, fmtDataHora } from "./TrisulDetailPanel";
 
@@ -83,6 +85,24 @@ const TRISUL_TABLE_FIELDS: DrilldownField<TrisulAtendimento>[] = [
   },
   { key: "campanha", label: "Campanha", allLabel: "Todas", get: (a) => a.campanha ?? "" },
   { key: "coordenador", label: "Coordenador", allLabel: "Todos", get: (a) => a.coordenador_nome ?? "" },
+  {
+    key: "regra",
+    label: "Regra do coordenador",
+    allLabel: "Todas",
+    get: (a) => (a.regra_coordenador != null ? String(a.regra_coordenador) : ""),
+    options: [
+      { value: "1", label: "Regra 1 · citado" },
+      { value: "2", label: "Regra 2 · rodízio" },
+      { value: "3", label: "Regra 3 · base" },
+    ],
+  },
+  {
+    key: "interesse",
+    label: "Interesse comercial",
+    allLabel: "Todos",
+    get: (a) => (a.sinais_interesse?.trim() ? "sim" : ""),
+    options: [{ value: "sim", label: "Pediu informação comercial" }],
+  },
   {
     key: "fup",
     label: "FUP",
@@ -284,6 +304,8 @@ export function TrisulTable({ atendimentos, periodLabel, filtersActive, hmac }: 
               <Th>Resultado</Th>
               <Th>Coordenador base anterior</Th>
               <Th>Gerente base anterior</Th>
+              <Th>Coordenador no Teamer</Th>
+              <Th align="center">Interesse comercial</Th>
               <Th align="center">Aguarda coordenador</Th>
               <Th align="center">Direcionado</Th>
             </tr>
@@ -331,6 +353,21 @@ export function TrisulTable({ atendimentos, periodLabel, filtersActive, hmac }: 
                   </td>
                   <td className="max-w-[160px] truncate px-4 py-3 text-xs text-[color:var(--foreground)]/90">
                     {a.gerente_nome ?? EMPTY}
+                  </td>
+                  <td className="max-w-[180px] px-4 py-3 text-xs text-[color:var(--foreground)]/90" title={regraLabel(a.regra_coordenador)}>
+                    {coordenadorNovoLabel(a) ? (
+                      <>
+                        <span className="block truncate">{coordenadorNovoLabel(a)}</span>
+                        {a.regra_coordenador != null && (
+                          <span className="block text-[10px] text-[color:var(--muted-foreground)]">Regra {a.regra_coordenador}</span>
+                        )}
+                      </>
+                    ) : (
+                      EMPTY
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-center text-xs font-semibold" title={a.sinais_interesse ?? undefined}>
+                    {a.sinais_interesse?.trim() ? <span className="text-[color:var(--primary)]">Sim</span> : EMPTY}
                   </td>
                   <td className="px-4 py-3 text-center text-xs font-semibold">
                     {aguarda ? <span className="text-amber-700 dark:text-amber-300">Sim</span> : EMPTY}

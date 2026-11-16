@@ -78,6 +78,16 @@ export type TrisulAtendimento = {
   convertido: boolean | null;
   canal_contato_coordenador: string | null;
   resumo_conversa: string | null;
+  // V7 (16/11/2026): coordenador gravado no Teamer pela Tris e a regra usada
+  // (1 = citado pelo parceiro, 2 = rodízio, 3 = base 12297).
+  coordinator_id_novo: number | null;
+  coordenador_nome_novo: string | null;
+  regra_coordenador: number | null;
+  coordenador_citado: string | null;
+  gerente_citado: string | null;
+  // Pedidos comerciais (tabela, material, lançamentos, áreas) encaminhados ao
+  // administrativo, "dd/mm hh:mm tipo: detalhe" separados por " | ".
+  sinais_interesse: string | null;
 };
 
 // Contagens somadas no recorte (grão bruto — taxas derivam daqui).
@@ -248,7 +258,7 @@ async function fetchAtendimentos(
     let q = supabase
       .from("trisul_atendimentos")
       .select(
-        "id, partner_id, nome, telefone, email, coordenador_nome, gerente_nome, coordenador_falou_recentemente, direcionado_em, direcionado_por, direcionado_para, campanha, disparo_at, status_envio, respondeu, tentativas_fup, resultado, convertido, canal_contato_coordenador, resumo_conversa",
+        "id, partner_id, nome, telefone, email, coordenador_nome, gerente_nome, coordenador_falou_recentemente, direcionado_em, direcionado_por, direcionado_para, campanha, disparo_at, status_envio, respondeu, tentativas_fup, resultado, convertido, canal_contato_coordenador, resumo_conversa, coordinator_id_novo, coordenador_nome_novo, regra_coordenador, coordenador_citado, gerente_citado, sinais_interesse",
       )
       .order("disparo_at", { ascending: false })
       .range(offset, offset + PAGE - 1);

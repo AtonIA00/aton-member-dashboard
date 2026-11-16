@@ -6,7 +6,9 @@ import type { TrisulAtendimento } from "@/lib/trisul";
 import {
   DIRECIONADO_PARA_MAX,
   aguardaCoordenador,
+  coordenadorNovoLabel,
   ehParceiro,
+  regraLabel,
   simNaoLabel,
 } from "@/lib/trisul-direcionamento";
 
@@ -90,6 +92,10 @@ export function TrisulDetailPanel({ atendimento: a, resultadoLabel, busy, erro, 
             <Item label="E-mail" value={a.email ?? ""} span />
             <Item label="Coordenador base anterior" value={a.coordenador_nome ?? ""} />
             <Item label="Gerente base anterior" value={a.gerente_nome ?? ""} />
+            <Item label="Coordenador no Teamer" value={coordenadorNovoLabel(a)} />
+            <Item label="Regra usada" value={regraLabel(a.regra_coordenador)} />
+            <Item label="Citado pelo parceiro" value={a.coordenador_citado ?? ""} />
+            <Item label="Gerente citado" value={a.gerente_citado ?? ""} />
             <Item label="Resultado" value={resultadoLabel} />
             <Item label="É parceiro" value={simNaoLabel(parceiro)} />
             <Item label="Aguarda coordenador" value={aguardaCoordenador(a) ? "Sim" : ""} />
@@ -142,6 +148,24 @@ export function TrisulDetailPanel({ atendimento: a, resultadoLabel, busy, erro, 
             )}
             {erro && <p className="mt-2 text-xs text-[color:var(--destructive)]">{erro}</p>}
           </section>
+
+          {a.sinais_interesse?.trim() ? (
+            <section className="mt-6">
+              <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">
+                Interesse comercial encaminhado ao administrativo
+              </h4>
+              <ul className="mt-2 space-y-1 text-sm text-[color:var(--foreground)]">
+                {a.sinais_interesse
+                  .split(" | ")
+                  .filter((s) => s.trim())
+                  .map((s, i) => (
+                    <li key={i} className="break-words">
+                      {s}
+                    </li>
+                  ))}
+              </ul>
+            </section>
+          ) : null}
 
           <section className="mt-6">
             <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">
