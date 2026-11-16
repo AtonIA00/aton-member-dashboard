@@ -36,3 +36,34 @@ export function simNaoLabel(v: "sim" | "nao" | ""): string {
 }
 
 export const DIRECIONADO_PARA_MAX = 120;
+
+// ── V7: coordenador gravado no Teamer pela Tris ─────────────────────────────
+type RowV7 = Pick<TrisulAtendimento, "coordinator_id_novo" | "coordenador_nome_novo" | "regra_coordenador">;
+
+const REGRA_LABEL: Record<number, string> = {
+  1: "Regra 1 · citado pelo parceiro",
+  2: "Regra 2 · rodízio",
+  3: "Regra 3 · base",
+};
+
+export function regraLabel(r: number | null | undefined): string {
+  return r != null && REGRA_LABEL[r] ? REGRA_LABEL[r] : "";
+}
+
+/** Nome sugerido para "Direcionado para": o coordenador que a Tris gravou no
+ *  Teamer (Regras 1 e 2); na base ou sem V7, o coordenador da base anterior. */
+export function coordenadorSugerido(
+  a: RowV7 & Pick<TrisulAtendimento, "coordenador_nome">,
+): string {
+  const novo = (a.coordenador_nome_novo ?? "").trim();
+  if (novo && novo.toUpperCase() !== "BASE") return novo;
+  return a.coordenador_nome ?? "";
+}
+
+/** "LIZANDRA (12301)"; base vira "Base (12297)". */
+export function coordenadorNovoLabel(a: RowV7): string {
+  if (a.coordinator_id_novo == null && !a.coordenador_nome_novo) return "";
+  const nome = (a.coordenador_nome_novo ?? "").trim();
+  const n = nome.toUpperCase() === "BASE" ? "Base" : nome;
+  return a.coordinator_id_novo != null ? `${n || "ID"} (${a.coordinator_id_novo})` : n;
+}
