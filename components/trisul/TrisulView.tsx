@@ -11,6 +11,7 @@ import {
   TrisulCoordRanking,
   TrisulDailyChart,
   TrisulFollowupChart,
+  TrisulPedidosChart,
   TrisulStatusChart,
 } from "./TrisulCharts";
 
@@ -132,6 +133,10 @@ export async function TrisulView({
 
               <div>
                 <TrisulDailyChart data={data.charts.daily} />
+              </div>
+
+              <div className="mt-4">
+                <TrisulPedidosChart data={data.charts.daily} />
               </div>
 
               <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">

@@ -65,6 +65,44 @@ export function TrisulDailyChart({ data }: { data: DailyPoint[] }) {
   );
 }
 
+// ── Pedidos comerciais por dia (indicador diário) ─────────────────────────────
+// Contados pelo dia do pedido (não do disparo): tabela, material, lançamentos
+// ou áreas que a Tris encaminhou ao administrativo.
+export function TrisulPedidosChart({ data }: { data: DailyPoint[] }) {
+  const theme = useTheme();
+  const labelFill = theme === "dark" ? "#f4f6fb" : "#0b1220";
+  const total = data.reduce((s, d) => s + d.pedidos, 0);
+  return (
+    <ChartCard
+      title="Pedidos comerciais por dia"
+      subtitle={total > 0 ? `${total.toLocaleString("pt-BR")} encaminhado${total === 1 ? "" : "s"} ao administrativo` : undefined}
+    >
+      {total === 0 ? (
+        <EmptyChart message="Nenhum pedido comercial no período." height={220} />
+      ) : (
+        <div style={{ width: "100%", height: 220 }}>
+          <ResponsiveContainer>
+            <BarChart data={data} margin={{ top: 16, right: 16, bottom: 0, left: -20 }}>
+              <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} />
+              <XAxis dataKey="dia" tickFormatter={ddmm} tick={AXIS_STYLE} tickLine={false} axisLine={{ stroke: CHART_AXIS.axis }} minTickGap={20} />
+              <YAxis tick={AXIS_STYLE} tickLine={false} axisLine={{ stroke: CHART_AXIS.axis }} allowDecimals={false} width={42} />
+              <Tooltip content={<AtonTooltip labelFormatter={(l) => ddmm(String(l))} />} cursor={{ fill: "rgba(16,185,129,0.08)" }} />
+              <Bar dataKey="pedidos" name="Pedidos comerciais" fill={CHART_COLORS.success} radius={[4, 4, 0, 0]} isAnimationActive animationDuration={400}>
+                <LabelList
+                  dataKey="pedidos"
+                  position="top"
+                  formatter={(v: unknown) => (Number(v) > 0 ? String(v) : "")}
+                  style={{ fill: labelFill, fontSize: 11, fontWeight: 600 }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </ChartCard>
+  );
+}
+
 // ── Consolidado por status (donut) ───────────────────────────────────────────
 export function TrisulStatusChart({ data }: { data: StatusSlice[] }) {
   const total = data.reduce((s, d) => s + d.value, 0);

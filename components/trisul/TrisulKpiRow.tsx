@@ -96,12 +96,20 @@ export function TrisulKpiRow({ kpis, kpisPrevious, deltas }: Props) {
       accent: "amber",
       delta: deltas?.taxaFalha,
     },
+    {
+      label: "Pedidos comerciais",
+      value: int(kpis.pedidosComerciais),
+      valuePrevious: kpisPrevious ? int(kpisPrevious.pedidosComerciais) : undefined,
+      sub: `${int(kpis.parceirosComPedido)} parceiro${kpis.parceirosComPedido === 1 ? "" : "s"} · encaminhados`,
+      accent: "green",
+      delta: deltas?.pedidosComerciais,
+    },
   ];
 
   return (
     <section
       aria-label="Indicadores principais"
-      className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7"
+      className="grid grid-cols-2 gap-4 sm:grid-cols-4"
     >
       {cards.map((c) => (
         <div
