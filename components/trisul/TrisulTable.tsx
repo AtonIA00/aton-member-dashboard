@@ -8,6 +8,7 @@ import { useTableDrilldown, type DrilldownField } from "@/lib/use-table-drilldow
 import {
   aguardaCoordenador,
   coordenadorNovoLabel,
+  coordenadorSugerido,
   ehParceiro,
   pendenteDirecionamento,
   regraLabel,
@@ -378,14 +379,14 @@ export function TrisulTable({ atendimentos, periodLabel, filtersActive, hmac }: 
                       title={
                         direcionado
                           ? `Direcionado para ${a.direcionado_para || "coordenador"} em ${fmtDataHora(a.direcionado_em)}${a.direcionado_por ? ` por ${a.direcionado_por}` : ""}`
-                          : "Marcar como direcionado para o coordenador da base anterior"
+                          : "Marcar como direcionado para o coordenador gravado no Teamer (ou o da base anterior)"
                       }
                     >
                       <input
                         type="checkbox"
                         checked={direcionado}
                         disabled={busyId === a.id}
-                        onChange={(e) => void direcionar(a, e.target.checked, a.coordenador_nome ?? "")}
+                        onChange={(e) => void direcionar(a, e.target.checked, coordenadorSugerido(a))}
                         aria-label={`Direcionado: ${a.nome ?? "parceiro"}`}
                         className="h-4 w-4 cursor-pointer accent-[color:var(--primary)] disabled:opacity-50"
                       />

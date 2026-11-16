@@ -7,6 +7,7 @@ import {
   DIRECIONADO_PARA_MAX,
   aguardaCoordenador,
   coordenadorNovoLabel,
+  coordenadorSugerido,
   ehParceiro,
   regraLabel,
   simNaoLabel,
@@ -38,7 +39,7 @@ export function fmtDataHora(iso: string | null): string {
 // direcionamento para o coordenador. Portal no body: o cartão da tabela tem
 // backdrop-blur, que vira o bloco de contenção do position:fixed.
 export function TrisulDetailPanel({ atendimento: a, resultadoLabel, busy, erro, onClose, onDirecionar }: Props) {
-  const [para, setPara] = useState(a.direcionado_para ?? a.coordenador_nome ?? "");
+  const [para, setPara] = useState(a.direcionado_para ?? coordenadorSugerido(a));
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

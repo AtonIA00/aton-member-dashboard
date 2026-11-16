@@ -50,6 +50,16 @@ export function regraLabel(r: number | null | undefined): string {
   return r != null && REGRA_LABEL[r] ? REGRA_LABEL[r] : "";
 }
 
+/** Nome sugerido para "Direcionado para": o coordenador que a Tris gravou no
+ *  Teamer (Regras 1 e 2); na base ou sem V7, o coordenador da base anterior. */
+export function coordenadorSugerido(
+  a: RowV7 & Pick<TrisulAtendimento, "coordenador_nome">,
+): string {
+  const novo = (a.coordenador_nome_novo ?? "").trim();
+  if (novo && novo.toUpperCase() !== "BASE") return novo;
+  return a.coordenador_nome ?? "";
+}
+
 /** "LIZANDRA (12301)"; base vira "Base (12297)". */
 export function coordenadorNovoLabel(a: RowV7): string {
   if (a.coordinator_id_novo == null && !a.coordenador_nome_novo) return "";
